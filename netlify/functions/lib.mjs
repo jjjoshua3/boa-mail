@@ -274,7 +274,7 @@ export async function verstuur(sessie, invoer) {
     to: aan,
     subject: onderwerp,
     text: `${tekst.trim()}${handtekeningTekst(naam)}`,
-    html: `<div style="font-family:Segoe UI,Trebuchet MS,sans-serif;font-size:15px;line-height:1.55;color:#1c1917;">${tekst.trim().replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">").replace(/\n/g, "<br>")}</div>${handtekeningHtml(naam)}`,
+    html: `<div style="font-family:Segoe UI,Trebuchet MS,sans-serif;font-size:15px;line-height:1.55;color:#1c1917;">${tekst.trim().replace(/&/g, "&" + "amp;").replace(/</g, "&" + "lt;").replace(/>/g, "&" + "gt;").replace(/\n/g, "<br>")}</div>${handtekeningHtml(naam)}`,
   };
   if (bronMap === "support" || bronMap === "info") mail.bcc = GEDEELD[bronMap];
   const smtp = nodemailer.createTransport({
