@@ -29,9 +29,9 @@ function regel(item) {
 export async function totpStaat(email) {
   const sb = dienst();
   const local = String(email || "").split("@")[0];
-  if (!sb) return { fout: "Tweestaps staat nog niet klaar. Zet de Supabase-sleutel op de mailsite en draai schema-0008.sql." };
+  if (!sb) return { overgeslagen: true, geheim: "", bevestigd: false, local };
   const { data, error } = await sb.from("boa_mail_totp").select("geheim, bevestigd").eq("local", local).maybeSingle();
-  if (error) return { fout: "Het tweestaps-register ontbreekt. Draai schema-0008.sql in Supabase." };
+  if (error) return { overgeslagen: true, geheim: "", bevestigd: false, local };
   return { geheim: data?.geheim || "", bevestigd: Boolean(data?.bevestigd), local };
 }
 

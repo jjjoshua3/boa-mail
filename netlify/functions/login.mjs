@@ -60,6 +60,11 @@ export async function handler(event) {
     }
     const staat = await totpStaat(adres);
     if (staat.fout) return antwoord(503, { fout: staat.fout });
+    if (staat.overgeslagen) {
+      const token = verzegel({ email: adres, pass: geheim, exp: Date.now() + 12 * 60 * 60 * 1000 });
+      await mailLog("MAIL_LOGIN", local, "ingelogd, tweestaps nog niet gekoppeld", "geslaagd", ip);
+      return antwoord(200, profiel(adres), { "set-cookie": koekje(token, 12 * 60 * 60) });
+    }
     let geheimTotp = staat.geheim;
     const stap = staat.bevestigd ? "code" : "setup";
     if (!geheimTotp) {
