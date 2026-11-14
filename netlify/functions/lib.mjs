@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import nodemailer from "nodemailer";
@@ -65,6 +66,7 @@ export function openSessie(event) {
     decipher.setAuthTag(tag);
     const sessie = JSON.parse(Buffer.concat([decipher.update(cijfer), decipher.final()]).toString("utf8"));
     if (!sessie.exp || sessie.exp < Date.now()) return null;
+    if (sessie.ticket) return null;
     if (!geldigAdres(sessie.email) || DIENST.has(sessie.email.split("@")[0])) return null;
     return sessie;
   } catch {
@@ -256,7 +258,7 @@ export async function bericht(sessie, map, uid) {
   });
 }
 
-export async function claim(sessie, map, uid) {
+export async function claim(sessie, map, uid, los = false, ip = "") {
   if (map !== "support" && map !== "info") return { fout: "Alleen Support en Info claim je.", status: 400 };
   const gekozen = doel(map, sessie);
   if (!gekozen || gekozen.ontbreekt) return { fout: "Deze gedeelde postbus is nog niet gekoppeld.", status: 503 };
@@ -268,6 +270,12 @@ export async function claim(sessie, map, uid) {
       const msg = await client.fetchOne(String(nummer), { flags: true }, { uid: true });
       if (!msg) return { fout: "Bericht niet gevonden.", status: 404 };
       const bestaand = claimUit(msg.flags, local);
+      if (los) {
+        if (!bestaand?.vanMij) return { fout: "Je kunt alleen je eigen claim loslaten.", status: 403 };
+        await client.messageFlagsRemove(String(nummer), [vlagVan(local)], { uid: true });
+        await mailLog("MAIL_UNCLAIM", local, `${map} losgelaten`, "geslaagd", ip);
+        return { ok: true };
+      }
       if (bestaand && !bestaand.vanMij) return { fout: `Al geclaimd door ${bestaand.local}.`, status: 409 };
       if (!bestaand) {
         await client.messageFlagsAdd(String(nummer), [vlagVan(local)], { uid: true });
@@ -278,13 +286,15 @@ export async function claim(sessie, map, uid) {
           return { fout: `Al geclaimd door ${opnieuw.local}.`, status: 409 };
         }
       }
+      await mailLog("MAIL_CLAIM", local, `${map} geclaimd`, "geslaagd", ip);
       return { ok: true };
     } finally { lock.release(); }
   });
 }
 
 export async function verstuur(sessie, invoer) {
-  const aan = String(invoer.aan || "").trim().toLowerCase();
+  let aan = String(invoer.aan || "").trim().toLowerCase();
+  if (aan && !aan.includes("@")) aan = `${aan}@boaportaal.nl`;
   const onderwerp = schoneRegel(invoer.onderwerp, 180);
   const tekst = String(invoer.tekst || "").replace(/\r/g, "").slice(0, 20000);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(aan)) return { fout: "Vul een geldig adres in.", status: 400 };
@@ -322,7 +332,58 @@ export async function verstuur(sessie, invoer) {
       await client.append("Sent", ruw, ["\\Seen"]);
     });
   } catch {
+    await mailLog("MAIL_VERZONDEN", local, `naar ${aan}`, "geslaagd", invoer.ip || "");
     return { ok: true, kopie: false };
   }
+  await mailLog("MAIL_VERZONDEN", local, `naar ${aan}`, "geslaagd", invoer.ip || "");
+  return { ok: true };
+}
+
+export function dienst() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+export function ipVan(event) {
+  const koppen = event.headers || {};
+  const lees = (naam) => {
+    const sleutel = Object.keys(koppen).find((k) => k.toLowerCase() === naam);
+    return sleutel ? String(koppen[sleutel] || "") : "";
+  };
+  return lees("x-nf-client-connection-ip") || lees("cf-connecting-ip") || lees("x-forwarded-for").split(",")[0].trim();
+}
+
+export function openToken(token) {
+  const key = sleutel();
+  if (!key || !token) return null;
+  try {
+    const buf = Buffer.from(String(token), "base64url");
+    const iv = buf.subarray(0, 12);
+    const tag = buf.subarray(12, 28);
+    const cijfer = buf.subarray(28);
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    const sessie = JSON.parse(Buffer.concat([decipher.update(cijfer), decipher.final()]).toString("utf8"));
+    if (!sessie.exp || sessie.exp < Date.now() || !sessie.ticket) return null;
+    if (!geldigAdres(sessie.email)) return null;
+    return sessie;
+  } catch {
+    return null;
+  }
+}
+
+export async function mailLog(soort, local, reden, resultaat, ip) {
+  const sb = dienst();
+  if (!sb) return { fout: "geen sleutel" };
+  const { error } = await sb.rpc("boa_mail_gebeurtenis", {
+    p_local: local,
+    p_soort: soort,
+    p_reden: String(reden || "").slice(0, 240),
+    p_resultaat: resultaat || "",
+    p_ip: ip || "",
+  });
+  if (error) return { fout: error.message };
   return { ok: true };
 }

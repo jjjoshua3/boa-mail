@@ -166,6 +166,16 @@
     .keuze button { flex: 1; }
     .keuze button.aan { background: var(--ink); color: #fff; border-color: var(--ink); }
     .fout { color: var(--stop); font-size: 13px; min-height: 1.2em; }
+
+    .qr { width: 180px; height: 180px; display: block; margin: 8px auto; background: #fff; border-radius: 12px; }
+    .suggesties { position: relative; }
+    .lijstje { position: absolute; z-index: 6; left: 0; right: 0; top: 100%; background: #fff; border: 1px solid var(--line); border-radius: 10px; max-height: 220px; overflow: auto; box-shadow: var(--shadow); }
+    .lijstje button { width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--line); padding: 8px 10px; }
+    .lijstje strong, .lijstje em, .lijstje small { display: block; }
+    .lijstje em { font-style: normal; color: var(--ink-soft); font-size: 13px; }
+    .lijstje small { color: #8a8176; font-size: 12px; }
+    .vink { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+    .vink input { width: auto; margin-top: 3px; }
     @media (max-width: 900px) {
       .werk { grid-template-columns: 1fr; }
       .mappen { display: flex; gap: 6px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); border-radius: 16px 16px 0 0; }

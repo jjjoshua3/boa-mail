@@ -18,6 +18,9 @@ let scherm = "post";
 let fout = "";
 let laden = false;
 let berichten = [];
+let wacht = null;
+let tips = [];
+let tipTimer = null;
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) => {
@@ -114,7 +117,7 @@ function berichtHtml(b) {
   const vanMij = b.claim && b.claim.vanMij;
   let actie = "";
   if (gedeeld && !geclaimd) actie = `<div class="rij"><button class="primair smal" id="claim" type="button">Claim</button></div>`;
-  else if (gedeeld && vanMij) actie = `<p class="meta"><span class="chip ok">Geclaimd door jou</span></p><div class="rij"><button class="primair smal" id="antwoord" type="button">Antwoorden</button></div>`;
+  else if (gedeeld && vanMij) actie = `<p class="meta"><span class="chip ok">Geclaimd door jou</span></p><div class="rij"><button class="primair smal" id="antwoord" type="button">Antwoorden</button><button class="secundair" id="unclaim" type="button">Claim loslaten</button></div>`;
   else if (gedeeld) actie = `<p class="meta"><span class="chip">Geclaimd door ${esc(b.claim.naam)}</span> Alleen die persoon antwoordt.</p>`;
   else if (map !== "verzonden" && b.vanAdres) actie = `<div class="rij"><button class="primair smal" id="antwoord" type="button">Antwoorden</button></div>`;
   const tekst = b.tekst == null ? "Bezig met openen…" : b.tekst;
@@ -164,8 +167,9 @@ function tekenLogin() {
   document.getElementById("app").innerHTML = `<div class="poort"><form class="poort-kaart" id="inlog">
     <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
     <h1>Mail</h1>
-    <p class="sub">Je eigen postbus. Support en Info lees je met het hele team.</p>
-    <label>Adres<input name="email" type="email" autocomplete="username" required placeholder="joshua.bosma@boaportaal.nl"></label>
+    <p class="sub">Je eigen postbus, op mail.boaportaal.nl. Niet op de site van de mailserver. Support en Info lees je daarna met het team.</p>
+    <label>Loginnaam<input name="email" type="text" autocomplete="username" required placeholder="info" autocapitalize="none" spellcheck="false"></label>
+    <p class="sub">Alleen je loginnaam. Zonder @boaportaal.nl. Bijvoorbeeld info, je Client-ID, joshua.bosma of account.</p>
     <label>Wachtwoord<input name="wachtwoord" type="password" autocomplete="current-password" required></label>
     <p class="fout">${esc(fout)}</p>
     <button class="primair" type="submit">Inloggen</button>
@@ -179,11 +183,14 @@ function tekenLogin() {
     fout = "";
     teken();
     try {
-      gebruiker = await api("/api/login", {
+      const data = await api("/api/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, wachtwoord }),
       });
+      if (data.stap) { wacht = data; fout = ""; teken(); return; }
+      gebruiker = data;
+      wacht = null;
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
       map = "in";
       openId = null;
@@ -206,7 +213,11 @@ function opstelHtml(p) {
   const onderwerp = bron ? (bron.onderwerp.startsWith("Re:") ? bron.onderwerp : `Re: ${bron.onderwerp}`) : "";
   return `<form class="opstel" id="opstel">
     <div class="kop"><h2>${scherm === "antwoord" ? "Antwoorden" : "Nieuw bericht"}</h2><button class="tekst" id="dicht" type="button">Sluiten</button></div>
-    <label>Aan<input name="aan" type="email" required value="${esc(aan)}"></label>
+    <label class="suggesties">Aan
+      <input name="aan" type="text" required value="${esc(aan)}" placeholder="info" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <div class="lijstje" id="tips" hidden></div>
+    </label>
+    <p class="sub">Typ een stukje. beh wordt beheerder, jos wordt joshua.bosma, claudia de postbus van die collega. Zonder @boaportaal.nl.</p>
     <label>Onderwerp<input name="onderwerp" required value="${esc(onderwerp)}"></label>
     <label>Bericht<textarea name="tekst" required></textarea></label>
     <p class="sub">De handtekening gaat altijd mee. Die staat vast, als ${esc(toonnaam(p))}.</p>
@@ -222,6 +233,7 @@ function instelHtml(p) {
     <p class="sub">Elke mail krijgt dezelfde handtekening. Je kiest alleen hoe je naam er staat.</p>
     <label>Voornaam<input name="voornaam" required value="${esc(p.voornaam)}"></label>
     <label>Achternaam<input name="achternaam" value="${esc(p.achternaam)}"></label>
+    <label class="vink"><input type="checkbox" name="zoek_naam" ${p.zoek_naam ? "checked" : ""}> Collega's mogen mij ook vinden op voor- en achternaam. Het adres blijft mijn Client-ID.</label>
     <div class="keuze">
       <button class="secundair ${p.stijl !== "volledig" ? "aan" : ""}" type="button" data-stijl="voornaam">Alleen voornaam</button>
       <button class="secundair ${p.stijl === "volledig" ? "aan" : ""}" type="button" data-stijl="volledig">Voornaam en achternaam</button>
@@ -273,7 +285,22 @@ function bind(p) {
     vul();
   }));
   document.getElementById("nieuw")?.addEventListener("click", () => { fout = ""; scherm = "nieuw"; teken(); });
-  document.getElementById("naar-hand")?.addEventListener("click", () => { scherm = "hand"; teken(); });
+  document.getElementById("naar-hand")?.addEventListener("click", async () => {
+    try {
+      const data = await api("/api/adres");
+      if (data.ik) {
+        const huidig = profiel();
+        localStorage.setItem(sleutel(), JSON.stringify({
+          voornaam: data.ik.voornaam || huidig.voornaam,
+          achternaam: data.ik.achternaam || huidig.achternaam,
+          stijl: huidig.stijl || "voornaam",
+          zoek_naam: Boolean(data.ik.zoek_naam),
+        }));
+      }
+    } catch {}
+    scherm = "hand";
+    teken();
+  });
   document.getElementById("uit")?.addEventListener("click", async () => {
     await api("/api/uit", { method: "POST" }).catch(() => {});
     gebruiker = null;
@@ -283,6 +310,23 @@ function bind(p) {
     teken();
   });
   document.getElementById("dicht")?.addEventListener("click", () => { scherm = "post"; fout = ""; teken(); });
+  document.getElementById("unclaim")?.addEventListener("click", async () => {
+    try {
+      await api("/api/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ map, id: openId, los: true }),
+      });
+      const id = openId;
+      await laad();
+      openId = id;
+      teken();
+      vul();
+    } catch (e) {
+      fout = e.message;
+      teken();
+    }
+  });
   document.getElementById("claim")?.addEventListener("click", async () => {
     try {
       await api("/api/claim", {
@@ -333,16 +377,52 @@ function bind(p) {
       teken();
     }
   });
-  document.getElementById("instel")?.addEventListener("submit", (e) => {
+  document.getElementById("instel")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
-    localStorage.setItem(sleutel(), JSON.stringify({
+    const vers = {
       voornaam: String(f.get("voornaam") || "").trim(),
       achternaam: String(f.get("achternaam") || "").trim(),
       stijl: String(f.get("stijl") || "voornaam"),
-    }));
+      zoek_naam: Boolean(f.get("zoek_naam")),
+    };
+    localStorage.setItem(sleutel(), JSON.stringify(vers));
+    try {
+      await api("/api/adres", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ voornaam: vers.voornaam, achternaam: vers.achternaam, zoek_naam: vers.zoek_naam }),
+      });
+    } catch (err) {
+      fout = err.message;
+    }
     scherm = "post";
     teken();
+  });
+  const aanVeld = document.querySelector("#opstel [name=aan]");
+  const tipBox = document.getElementById("tips");
+  const toonTips = () => {
+    if (!tipBox) return;
+    if (!tips.length) { tipBox.hidden = true; tipBox.innerHTML = ""; return; }
+    tipBox.hidden = false;
+    tipBox.innerHTML = tips.map((item, i) => `<button type="button" data-tip="${i}"><strong>${esc(item.label)}</strong><em>${esc(item.adres)}</em><small>${esc(item.toelichting || "")}</small></button>`).join("");
+    tipBox.querySelectorAll("[data-tip]").forEach((knoop) => knoop.addEventListener("click", () => {
+      aanVeld.value = tips[Number(knoop.dataset.tip)].adres;
+      tips = [];
+      toonTips();
+    }));
+  };
+  aanVeld?.addEventListener("input", () => {
+    clearTimeout(tipTimer);
+    const q = aanVeld.value.trim();
+    if (q.length < 2) { tips = []; toonTips(); return; }
+    tipTimer = setTimeout(async () => {
+      try {
+        const data = await api(`/api/adres?q=${encodeURIComponent(q)}`);
+        tips = data.treffers || [];
+        toonTips();
+      } catch { tips = []; toonTips(); }
+    }, 160);
   });
   document.querySelectorAll("[data-stijl]").forEach((knoop) => knoop.addEventListener("click", () => {
     const vers = {
@@ -355,8 +435,46 @@ function bind(p) {
   }));
 }
 
+function tekenTotp() {
+  const setup = wacht.stap === "setup";
+  document.getElementById("app").innerHTML = `<div class="poort"><form class="poort-kaart" id="totp">
+    <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
+    <h1>${setup ? "Authenticator instellen" : "Authenticator"}</h1>
+    <p class="sub">${setup ? "Scan de code. Daarna de 6 cijfers. Dit vragen we bij elke nieuwe aanmelding." : "Vul de 6 cijfers uit je authenticator in. Elke nieuwe aanmelding vraagt dit opnieuw."}</p>
+    ${setup && wacht.qr ? `<img class="qr" src="${esc(wacht.qr)}" alt="QR-code voor de authenticator">` : ""}
+    ${setup && wacht.secret ? `<p class="sub">Lukt scannen niet, typ dan deze sleutel: ${esc(wacht.secret)}</p>` : ""}
+    <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
+    <p class="fout">${esc(fout)}</p>
+    <button class="primair" type="submit">Bevestigen</button>
+    <button class="tekst" id="terug" type="button">Terug</button>
+  </form></div>`;
+  document.getElementById("terug").addEventListener("click", () => { wacht = null; fout = ""; teken(); });
+  document.getElementById("totp").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const code = new FormData(e.target).get("code");
+    fout = "";
+    try {
+      gebruiker = await api("/api/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ticket: wacht.ticket, code }),
+      });
+      gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
+      wacht = null;
+      map = "in";
+      openId = null;
+      scherm = "post";
+      await laad();
+    } catch (err) {
+      fout = err.message;
+      teken();
+    }
+  });
+}
+
 function teken() {
-  if (!gebruiker) tekenLogin();
+  if (wacht) tekenTotp();
+  else if (!gebruiker) tekenLogin();
   else tekenPost();
 }
 
