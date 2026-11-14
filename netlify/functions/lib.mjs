@@ -239,7 +239,16 @@ export async function berichten(sessie, map) {
   });
 }
 
-export async function bericht(sessie, map, uid) {
+function bijlagenVan(parsed) {
+  return (parsed.attachments || []).filter((stuk) => stuk.filename || stuk.contentDisposition === "attachment");
+}
+
+function schoonBestand(naam, index) {
+  const basis = String(naam || `bijlage-${index + 1}`).split(/[/\\]/).pop().replace(/[^\w.\- ()]/g, "_").slice(0, 120);
+  return basis || `bijlage-${index + 1}`;
+}
+
+export async function bericht(sessie, map, uid, bijlage) {
   const gekozen = doel(map, sessie);
   if (!gekozen || gekozen.geweigerd || gekozen.ontbreekt) return { fout: "Geen toegang.", status: 403 };
   const nummer = Number(uid);
@@ -250,9 +259,26 @@ export async function bericht(sessie, map, uid) {
       const msg = await client.fetchOne(String(nummer), { source: true, flags: true }, { uid: true });
       if (!msg?.source) return { fout: "Bericht niet gevonden.", status: 404 };
       const parsed = await simpleParser(msg.source);
+      const alle = bijlagenVan(parsed);
+      if (bijlage !== undefined && bijlage !== null && bijlage !== "") {
+        const index = Number(bijlage);
+        const stuk = alle[index];
+        if (!stuk?.content) return { fout: "Bijlage niet gevonden.", status: 404 };
+        return {
+          naam: schoonBestand(stuk.filename, index),
+          type: stuk.contentType || "application/octet-stream",
+          data: stuk.content.toString("base64"),
+        };
+      }
       const tekst = parsed.text || String(parsed.html || "").replace(/<[^>]+>/g, " ").replace(/\s+\n/g, "\n").trim();
       return {
         tekst,
+        bijlagen: alle.map((stuk, index) => ({
+          id: index,
+          naam: schoonBestand(stuk.filename, index),
+          type: stuk.contentType || "application/octet-stream",
+          grootte: stuk.size || stuk.content?.length || 0,
+        })),
         claim: (map === "support" || map === "info") ? claimUit(msg.flags, sessie.email.split("@")[0]) : null,
       };
     } finally { lock.release(); }
@@ -300,6 +326,20 @@ export async function verstuur(sessie, invoer) {
   const tekst = String(invoer.tekst || "").replace(/\r/g, "").slice(0, 20000);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(aan)) return { fout: "Vul een geldig adres in.", status: 400 };
   if (!onderwerp || !tekst.trim()) return { fout: "Onderwerp en bericht zijn verplicht.", status: 400 };
+  const bijlagen = Array.isArray(invoer.bijlagen) ? invoer.bijlagen.slice(0, 5) : [];
+  const attachments = [];
+  let totaal = 0;
+  for (const stuk of bijlagen) {
+    const buf = Buffer.from(String(stuk?.data || ""), "base64");
+    if (!buf.length) continue;
+    totaal += buf.length;
+    if (totaal > 3_500_000) return { fout: "De bijlagen zijn samen te groot. Maximaal 3,5 MB.", status: 400 };
+    attachments.push({
+      filename: schoonBestand(stuk.naam, attachments.length),
+      content: buf,
+      contentType: String(stuk.type || "application/octet-stream").slice(0, 120),
+    });
+  }
   const local = sessie.email.split("@")[0];
   const naam = toonnaam(invoer, local);
   const bronMap = String(invoer.bronMap || "");
@@ -315,6 +355,7 @@ export async function verstuur(sessie, invoer) {
     subject: onderwerp,
     text: `${tekst.trim()}${handtekeningTekst(naam)}`,
     html: `<div style="font-family:Segoe UI,Trebuchet MS,sans-serif;font-size:15px;line-height:1.55;color:#1c1917;">${tekst.trim().replace(/&/g, "&" + "amp;").replace(/</g, "&" + "lt;").replace(/>/g, "&" + "gt;").replace(/\n/g, "<br>")}</div>${handtekeningHtml(naam)}`,
+    attachments,
   };
   if (bronMap === "support" || bronMap === "info") mail.bcc = GEDEELD[bronMap];
   const smtp = nodemailer.createTransport({

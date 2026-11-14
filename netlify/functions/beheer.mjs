@@ -2,8 +2,6 @@ import { createClient } from "@supabase/supabase-js";
 import { dienst } from "./lib.mjs";
 
 const PUB = "sb_publishable_x8nU8ype6b1KOL6K8lS2Iw_DDjz4Olr";
-const LETOP_UIT = "Tweestapsverificatie staat nog uit. Je bent ingelogd met alleen je wachtwoord.";
-const LETOP_LOS = "Deze postbus is nog niet gekoppeld aan het systeemaccount. Je bent ingelogd met alleen je wachtwoord.";
 
 function gebruikerClient() {
   const url = process.env.SUPABASE_URL;
@@ -11,34 +9,51 @@ function gebruikerClient() {
   return createClient(url, PUB, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
+async function alleGebruikers() {
+  const admin = dienst();
+  if (!admin) return [];
+  const lijst = [];
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error || !data?.users?.length) break;
+    lijst.push(...data.users);
+    if (data.users.length < 200) break;
+  }
+  return lijst;
+}
+
 async function vindGebruiker(local, adres) {
   const admin = dienst();
   if (!admin) return null;
-  for (let page = 1; page <= 4; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
-    if (error || !data?.users?.length) return null;
-    const hit = data.users.find((user) => {
-      const mail = String(user.email || "").toLowerCase();
-      const meta = user.user_metadata || {};
-      const extra = [meta.mail_local, meta.client_id].map((waarde) => String(waarde || "").toLowerCase());
-      return mail === adres || extra.includes(local);
-    });
-    if (hit?.email) return { email: hit.email };
-    if (data.users.length < 200) return null;
+  const users = await alleGebruikers();
+  const norm = (waarde) => String(waarde || "").trim().toLowerCase();
+  const direct = users.find((user) => {
+    const mail = norm(user.email);
+    const meta = user.user_metadata || {};
+    return mail === adres || norm(meta.mail_local) === local || norm(meta.client_id) === local || mail.split("@")[0] === local;
+  });
+  if (direct?.email) return { email: direct.email };
+  if (local !== "joshua.bosma" && local !== "beheerder") return null;
+  const beheerders = users.filter((user) => norm(user.user_metadata?.rol) === "beheerder");
+  if (beheerders.length !== 1 || !beheerders[0].email) return null;
+  const een = beheerders[0];
+  const meta = een.user_metadata || {};
+  if (norm(meta.mail_local) !== local) {
+    await admin.auth.admin.updateUserById(een.id, { user_metadata: { ...meta, mail_local: local } });
   }
-  return null;
+  return { email: een.email };
 }
 
 export async function startBeheer(adres, pass) {
-  if (!dienst() || !gebruikerClient()) return { letop: LETOP_UIT };
+  if (!dienst() || !gebruikerClient()) return { letop: "" };
   const local = adres.split("@")[0];
   const gebruiker = await vindGebruiker(local, adres);
-  if (!gebruiker) return { letop: LETOP_LOS };
+  if (!gebruiker) return { letop: "" };
   const sb = gebruikerClient();
   const inn = await sb.auth.signInWithPassword({ email: gebruiker.email, password: pass });
-  if (inn.error || !inn.data.session) return { letop: LETOP_LOS };
+  if (inn.error || !inn.data.session) return { letop: "" };
   const lijst = await sb.auth.mfa.listFactors();
-  if (lijst.error) return { letop: LETOP_UIT };
+  if (lijst.error) return { letop: "" };
   const verified = (lijst.data?.totp || []).filter((factor) => factor.status === "verified" && factor.friendly_name === "beheer");
   if (!verified[0]) {
     for (const factor of lijst.data?.all || []) {
@@ -47,7 +62,7 @@ export async function startBeheer(adres, pass) {
       }
     }
     const vers = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "beheer", issuer: "BOA Beheer" });
-    if (vers.error || !vers.data?.totp?.qr_code) return { letop: LETOP_UIT };
+    if (vers.error || !vers.data?.totp?.qr_code) return { letop: "" };
     return {
       stap: "setup",
       factorId: vers.data.id,

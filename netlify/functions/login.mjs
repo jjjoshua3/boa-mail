@@ -52,11 +52,11 @@ export async function handler(event) {
       await mailLog("MAIL_LOGIN", local, "wachtwoord onjuist", "mislukt", ip);
       return antwoord(401, { fout: "Deze loginnaam en dit wachtwoord horen niet bij een postbus." });
     }
-    let beheer = { letop: "Tweestapsverificatie staat nog uit. Je bent ingelogd met alleen je wachtwoord." };
+    let beheer = { letop: "" };
     try {
       beheer = await startBeheer(adres, geheim);
     } catch {
-      beheer = { letop: "Tweestapsverificatie staat nog uit. Je bent ingelogd met alleen je wachtwoord." };
+      beheer = { letop: "" };
     }
     if (beheer.stap) {
       const ticket = verzegel({

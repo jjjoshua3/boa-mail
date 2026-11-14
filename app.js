@@ -100,6 +100,31 @@ function handtekeningBlok(naam) {
   </div>`;
 }
 
+function formaat(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} kB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function leesBijlagen(bestanden) {
+  const files = [...bestanden].filter((file) => file && file.size).slice(0, 5);
+  let totaal = 0;
+  const bijlagen = [];
+  for (const file of files) {
+    totaal += file.size;
+    if (totaal > 3500000) throw new Error("De bijlagen zijn samen te groot. Maximaal 3,5 MB.");
+    const data = await new Promise((resolve, reject) => {
+      const lezer = new FileReader();
+      lezer.onload = () => resolve(String(lezer.result || "").split(",")[1] || "");
+      lezer.onerror = () => reject(new Error("De bijlage kon niet worden gelezen."));
+      lezer.readAsDataURL(file);
+    });
+    bijlagen.push({ naam: file.name, type: file.type || "application/octet-stream", data });
+  }
+  return bijlagen;
+}
+
 function huidig() { return berichten.find((b) => b.id === openId) || null; }
 
 function leegtekst() {
@@ -121,9 +146,11 @@ function berichtHtml(b) {
   else if (gedeeld) actie = `<p class="meta"><span class="chip">Geclaimd door ${esc(b.claim.naam)}</span> Alleen die persoon antwoordt.</p>`;
   else if (map !== "verzonden" && b.vanAdres) actie = `<div class="rij"><button class="primair smal" id="antwoord" type="button">Antwoorden</button></div>`;
   const tekst = b.tekst == null ? "Bezig met openen…" : b.tekst;
+  const bijlagen = (b.bijlagen || []).map((stuk) => `<li><button class="tekst" type="button" data-bijlage="${stuk.id}">${esc(stuk.naam)} · ${esc(formaat(stuk.grootte))}</button></li>`).join("");
   return `<h2>${esc(b.onderwerp)}</h2>
     <p class="meta">Van ${esc(b.van)} · aan ${esc(b.aan)} · ${esc(new Date(b.tijd).toLocaleString("nl-NL"))}</p>
     <div class="tekstblok">${esc(tekst)}</div>
+    ${bijlagen ? `<ul class="bijlagen">${bijlagen}</ul>` : ""}
     ${actie}`;
 }
 
@@ -154,6 +181,7 @@ async function vul() {
     const data = await api(`/api/post?map=${encodeURIComponent(map)}&id=${encodeURIComponent(uid)}`);
     if (openId !== id) return;
     item.tekst = data.tekst || "";
+    item.bijlagen = data.bijlagen || [];
     if (data.claim) item.claim = data.claim;
     teken();
   } catch (e) {
@@ -220,6 +248,8 @@ function opstelHtml(p) {
     <p class="sub">Typ een stukje. beh wordt beheerder, jos wordt joshua.bosma, claudia de postbus van die collega. Zonder @boaportaal.nl.</p>
     <label>Onderwerp<input name="onderwerp" required value="${esc(onderwerp)}"></label>
     <label>Bericht<textarea name="tekst" required></textarea></label>
+    <label>Bijlagen<input name="bijlagen" type="file" multiple></label>
+    <p class="sub">Bestanden meesturen mag. Samen maximaal 3,5 MB. Ontvangen bijlagen staan onder het bericht.</p>
     <p class="sub">De handtekening gaat altijd mee. Die staat vast, als ${esc(toonnaam(p))}.</p>
     ${handtekeningBlok(toonnaam(p))}
     <p class="fout">${esc(fout)}</p>
@@ -346,6 +376,24 @@ function bind(p) {
     }
   });
   document.getElementById("antwoord")?.addEventListener("click", () => { fout = ""; scherm = "antwoord"; teken(); });
+  document.querySelectorAll("[data-bijlage]").forEach((knoop) => knoop.addEventListener("click", async () => {
+    const uid = String(openId || "").split(":")[1];
+    try {
+      const data = await api(`/api/post?map=${encodeURIComponent(map)}&id=${encodeURIComponent(uid)}&bijlage=${encodeURIComponent(knoop.dataset.bijlage)}`);
+      const bin = atob(data.data || "");
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: data.type || "application/octet-stream" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = data.naam || "bijlage";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      fout = e.message;
+      teken();
+    }
+  }));
   document.getElementById("opstel")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -353,6 +401,7 @@ function bind(p) {
     knop.disabled = true;
     try {
       const bron = scherm === "antwoord" ? huidig() : null;
+      const bijlagen = await leesBijlagen(e.target.bijlagen?.files || []);
       await api("/api/verstuur", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -360,6 +409,7 @@ function bind(p) {
           aan: String(f.get("aan") || ""),
           onderwerp: String(f.get("onderwerp") || ""),
           tekst: String(f.get("tekst") || ""),
+          bijlagen,
           voornaam: profiel().voornaam,
           achternaam: profiel().achternaam,
           stijl: profiel().stijl,

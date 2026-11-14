@@ -6,7 +6,7 @@ export async function handler(event) {
   const q = event.queryStringParameters || {};
   const map = String(q.map || "in");
   try {
-    const uitkomst = q.id ? await bericht(sessie, map, q.id) : await berichten(sessie, map);
+    const uitkomst = q.id ? await bericht(sessie, map, q.id, q.bijlage) : await berichten(sessie, map);
     if (uitkomst.fout) return antwoord(uitkomst.status || 400, { fout: uitkomst.fout });
     return antwoord(200, uitkomst);
   } catch {
