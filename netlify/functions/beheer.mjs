@@ -1,0 +1,84 @@
+import { createClient } from "@supabase/supabase-js";
+import { dienst } from "./lib.mjs";
+
+const PUB = "sb_publishable_x8nU8ype6b1KOL6K8lS2Iw_DDjz4Olr";
+const LETOP_UIT = "Tweestapsverificatie staat nog uit. Je bent ingelogd met alleen je wachtwoord.";
+const LETOP_LOS = "Deze postbus is nog niet gekoppeld aan het systeemaccount. Je bent ingelogd met alleen je wachtwoord.";
+
+function gebruikerClient() {
+  const url = process.env.SUPABASE_URL;
+  if (!url) return null;
+  return createClient(url, PUB, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+async function vindGebruiker(local, adres) {
+  const admin = dienst();
+  if (!admin) return null;
+  for (let page = 1; page <= 4; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error || !data?.users?.length) return null;
+    const hit = data.users.find((user) => {
+      const mail = String(user.email || "").toLowerCase();
+      const meta = user.user_metadata || {};
+      const extra = [meta.mail_local, meta.client_id].map((waarde) => String(waarde || "").toLowerCase());
+      return mail === adres || extra.includes(local);
+    });
+    if (hit?.email) return { email: hit.email };
+    if (data.users.length < 200) return null;
+  }
+  return null;
+}
+
+export async function startBeheer(adres, pass) {
+  if (!dienst() || !gebruikerClient()) return { letop: LETOP_UIT };
+  const local = adres.split("@")[0];
+  const gebruiker = await vindGebruiker(local, adres);
+  if (!gebruiker) return { letop: LETOP_LOS };
+  const sb = gebruikerClient();
+  const inn = await sb.auth.signInWithPassword({ email: gebruiker.email, password: pass });
+  if (inn.error || !inn.data.session) return { letop: LETOP_LOS };
+  const lijst = await sb.auth.mfa.listFactors();
+  if (lijst.error) return { letop: LETOP_UIT };
+  const verified = (lijst.data?.totp || []).filter((factor) => factor.status === "verified" && factor.friendly_name === "beheer");
+  if (!verified[0]) {
+    for (const factor of lijst.data?.all || []) {
+      if (factor.status !== "verified" && factor.friendly_name === "beheer") {
+        await sb.auth.mfa.unenroll({ factorId: factor.id });
+      }
+    }
+    const vers = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "beheer", issuer: "BOA Beheer" });
+    if (vers.error || !vers.data?.totp?.qr_code) return { letop: LETOP_UIT };
+    return {
+      stap: "setup",
+      factorId: vers.data.id,
+      qr: vers.data.totp.qr_code,
+      secret: vers.data.totp.secret || "",
+      access_token: inn.data.session.access_token,
+      refresh_token: inn.data.session.refresh_token,
+    };
+  }
+  return {
+    stap: "code",
+    factorId: verified[0].id,
+    qr: "",
+    secret: "",
+    access_token: inn.data.session.access_token,
+    refresh_token: inn.data.session.refresh_token,
+  };
+}
+
+export async function bevestigBeheer(open, code) {
+  const sb = gebruikerClient();
+  if (!sb || !open?.access_token || !open?.factorId) return { fout: "De tweede stap is verlopen. Log opnieuw in." };
+  const gezet = await sb.auth.setSession({ access_token: open.access_token, refresh_token: open.refresh_token });
+  if (gezet.error) return { fout: "De tweede stap is verlopen. Log opnieuw in." };
+  const uitdaging = await sb.auth.mfa.challenge({ factorId: open.factorId });
+  if (uitdaging.error || !uitdaging.data) return { fout: "De code kon niet worden gevraagd. Probeer het opnieuw." };
+  const check = await sb.auth.mfa.verify({
+    factorId: open.factorId,
+    challengeId: uitdaging.data.id,
+    code: String(code || "").replace(/\s/g, ""),
+  });
+  if (check.error) return { fout: "De code uit de authenticator klopt niet." };
+  return { ok: true };
+}

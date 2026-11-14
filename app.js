@@ -168,8 +168,7 @@ function tekenLogin() {
     <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
     <h1>Mail</h1>
     <p class="sub">Je eigen postbus, op mail.boaportaal.nl. Niet op de site van de mailserver. Support en Info lees je daarna met het team.</p>
-    <label>Loginnaam<input name="email" type="text" autocomplete="username" required placeholder="info" autocapitalize="none" spellcheck="false"></label>
-    <p class="sub">Alleen je loginnaam. Zonder @boaportaal.nl. Bijvoorbeeld info, je Client-ID, joshua.bosma of account.</p>
+    <label>Loginnaam<input name="email" type="text" autocomplete="username" required placeholder="loginnaam" autocapitalize="none" spellcheck="false"></label>
     <label>Wachtwoord<input name="wachtwoord" type="password" autocomplete="current-password" required></label>
     <p class="fout">${esc(fout)}</p>
     <button class="primair" type="submit">Inloggen</button>
@@ -190,6 +189,7 @@ function tekenLogin() {
       });
       if (data.stap) { wacht = data; fout = ""; teken(); return; }
       gebruiker = data;
+      gebruiker.letop = data.letop || "";
       wacht = null;
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
       map = "in";
@@ -259,6 +259,7 @@ function tekenPost() {
         <button class="tekst" id="uit" type="button">Afmelden</button>
       </div>
     </header>
+    ${gebruiker.letop ? `<p class="letop">${esc(gebruiker.letop)}</p>` : ""}
     <div class="werk">
       <nav class="mappen">${mappen().map(([id, label]) => `<button class="mapknop ${map === id ? "aan" : ""}" data-map="${id}" type="button">${label}</button>`).join("")}</nav>
       <div class="lijst">${items.length ? items.map((item) => `<button class="item ${item.id === openId ? "aan" : ""}" data-id="${esc(item.id)}" type="button"><strong>${esc(item.van)}</strong><em>${esc(item.onderwerp)}</em><small>${esc(new Date(item.tijd).toLocaleString("nl-NL"))}</small></button>`).join("") : `<p class="leeg" style="padding:16px;">${esc(laden ? "Bezig met ophalen…" : "Geen berichten in deze map.")}</p>`}</div>
@@ -439,8 +440,8 @@ function tekenTotp() {
   const setup = wacht.stap === "setup";
   document.getElementById("app").innerHTML = `<div class="poort"><form class="poort-kaart" id="totp">
     <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
-    <h1>${setup ? "Authenticator instellen" : "Authenticator"}</h1>
-    <p class="sub">${setup ? "Scan de code. Daarna de 6 cijfers. Dit vragen we bij elke nieuwe aanmelding." : "Vul de 6 cijfers uit je authenticator in. Elke nieuwe aanmelding vraagt dit opnieuw."}</p>
+    <h1>${setup ? "Beheer-authenticator instellen" : "Beheer-authenticator"}</h1>
+    <p class="sub">${setup ? "Scan de code en noem hem BOA Beheer. Dezelfde code geldt daarna voor systeem, de behandelaar op de servicedesk en deze mail. Niet de code van boaportaal.nl." : "Vul de 6 cijfers van BOA Beheer in. Dezelfde code als op systeem en als behandelaar. Niet de code van boaportaal.nl."}</p>
     ${setup && wacht.qr ? `<img class="qr" src="${esc(wacht.qr)}" alt="QR-code voor de authenticator">` : ""}
     ${setup && wacht.secret ? `<p class="sub">Lukt scannen niet, typ dan deze sleutel: ${esc(wacht.secret)}</p>` : ""}
     <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>

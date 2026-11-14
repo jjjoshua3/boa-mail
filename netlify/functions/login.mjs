@@ -1,6 +1,5 @@
 import { antwoord, controleerLogin, geldigAdres, ipVan, koekje, leesJson, mailLog, openToken, verzegel } from "./lib.mjs";
-import { bewaarGeheim, totpStaat } from "./adres.mjs";
-import { klopt, nieuwGeheim, qrData } from "./totp.mjs";
+import { bevestigBeheer, startBeheer } from "./beheer.mjs";
 
 const DIENST = new Set(["support", "info"]);
 
@@ -27,17 +26,12 @@ export async function handler(event) {
     const ip = ipVan(event);
     if (body.ticket) {
       const open = openToken(body.ticket);
-      if (!open) return antwoord(401, { fout: "De tweede stap is verlopen. Log opnieuw in." });
+      if (!open?.factorId) return antwoord(401, { fout: "De tweede stap is verlopen. Log opnieuw in." });
       const local = open.email.split("@")[0];
-      const staat = await totpStaat(open.email);
-      if (staat.fout) return antwoord(503, { fout: staat.fout });
-      if (!staat.geheim || !klopt(staat.geheim, body.code)) {
+      const check = await bevestigBeheer(open, body.code);
+      if (check.fout) {
         await mailLog("MAIL_LOGIN", local, "onjuiste authenticatorcode", "mislukt", ip);
-        return antwoord(401, { fout: "De code uit de authenticator klopt niet." });
-      }
-      if (!staat.bevestigd) {
-        const opgeslagen = await bewaarGeheim(local, staat.geheim, true);
-        if (opgeslagen.fout) return antwoord(503, { fout: "De authenticator kon niet worden vastgelegd." });
+        return antwoord(401, { fout: check.fout });
       }
       const token = verzegel({ email: open.email, pass: open.pass, exp: Date.now() + 12 * 60 * 60 * 1000 });
       await mailLog("MAIL_LOGIN", local, "ingelogd", "geslaagd", ip);
@@ -45,7 +39,7 @@ export async function handler(event) {
     }
     const adres = naarAdres(body.email);
     const local = adres.split("@")[0];
-    if (!geldigAdres(adres)) return antwoord(400, { fout: "Gebruik je loginnaam. Zonder @boaportaal.nl, bijvoorbeeld info of je Client-ID." });
+    if (!geldigAdres(adres)) return antwoord(400, { fout: "Gebruik je eigen loginnaam, zonder @boaportaal.nl." });
     if (DIENST.has(local)) return antwoord(403, { fout: "Info en Support zijn gedeelde postbussen. Log in met je eigen loginnaam. Die post lees je daarna in de map." });
     const geheim = String(body.wachtwoord || "");
     if (geheim.length < 8 || geheim.length > 200) {
@@ -58,34 +52,38 @@ export async function handler(event) {
       await mailLog("MAIL_LOGIN", local, "wachtwoord onjuist", "mislukt", ip);
       return antwoord(401, { fout: "Deze loginnaam en dit wachtwoord horen niet bij een postbus." });
     }
-    const staat = await totpStaat(adres);
-    if (staat.fout) return antwoord(503, { fout: staat.fout });
-    if (staat.overgeslagen) {
-      const token = verzegel({ email: adres, pass: geheim, exp: Date.now() + 12 * 60 * 60 * 1000 });
-      await mailLog("MAIL_LOGIN", local, "ingelogd, tweestaps nog niet gekoppeld", "geslaagd", ip);
-      return antwoord(200, profiel(adres), { "set-cookie": koekje(token, 12 * 60 * 60) });
+    let beheer = { letop: "Tweestapsverificatie staat nog uit. Je bent ingelogd met alleen je wachtwoord." };
+    try {
+      beheer = await startBeheer(adres, geheim);
+    } catch {
+      beheer = { letop: "Tweestapsverificatie staat nog uit. Je bent ingelogd met alleen je wachtwoord." };
     }
-    let geheimTotp = staat.geheim;
-    const stap = staat.bevestigd ? "code" : "setup";
-    if (!geheimTotp) {
-      geheimTotp = nieuwGeheim();
-      const opgeslagen = await bewaarGeheim(local, geheimTotp, false);
-      if (opgeslagen.fout) return antwoord(503, { fout: "De authenticator kon niet worden klaargezet." });
+    if (beheer.stap) {
+      const ticket = verzegel({
+        email: adres,
+        pass: geheim,
+        exp: Date.now() + 10 * 60 * 1000,
+        ticket: true,
+        factorId: beheer.factorId,
+        access_token: beheer.access_token,
+        refresh_token: beheer.refresh_token,
+      });
+      return antwoord(200, {
+        stap: beheer.stap,
+        ticket,
+        qr: beheer.qr || "",
+        secret: beheer.secret || "",
+        local,
+        welke: "beheer",
+      });
     }
-    const ticket = verzegel({
-      email: adres,
-      pass: geheim,
-      exp: Date.now() + 10 * 60 * 1000,
-      ticket: true,
-    });
-    return antwoord(200, {
-      stap,
-      ticket,
-      qr: stap === "setup" ? await qrData(geheimTotp, local) : "",
-      secret: stap === "setup" ? geheimTotp : "",
-      local,
-    });
-  } catch {
+    const token = verzegel({ email: adres, pass: geheim, exp: Date.now() + 12 * 60 * 60 * 1000 });
+    await mailLog("MAIL_LOGIN", local, beheer.letop ? "ingelogd zonder tweede stap" : "ingelogd", "geslaagd", ip);
+    return antwoord(200, { ...profiel(adres), letop: beheer.letop || "" }, { "set-cookie": koekje(token, 12 * 60 * 60) });
+  } catch (err) {
+    if (String(err?.message || "") === "geen sleutel") {
+      return antwoord(503, { fout: "De mailserver mist een sessiesleutel. Zet op de Netlify-site van mail dezelfde SUPABASE_URL en SUPABASE_SERVICE_ROLE_KEY als bij systeem, of een SESSION_SECRET van minstens 24 tekens." });
+    }
     return antwoord(500, { fout: "Inloggen lukt nu niet. Probeer het opnieuw." });
   }
 }

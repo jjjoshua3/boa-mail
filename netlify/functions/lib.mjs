@@ -36,9 +36,9 @@ export function leesJson(event) {
 }
 
 function sleutel() {
-  const geheim = process.env.SESSION_SECRET || "";
+  const geheim = process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
   if (geheim.length < 24) return null;
-  return createHash("sha256").update(geheim).digest();
+  return createHash("sha256").update(`boa-mail-sessie:${geheim}`).digest();
 }
 
 export function verzegel(sessie) {
