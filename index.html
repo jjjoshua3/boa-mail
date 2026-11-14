@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mail · BOA Portaal</title>
+  <link rel="icon" href="/favicon.svg">
+  <style>
+    :root {
+      --ink: #0f2537;
+      --ink-soft: #3d4c59;
+      --paper: #f4f0e8;
+      --card: #fffcf7;
+      --line: #e3d9cc;
+      --amber: #9a5b12;
+      --amber-soft: #f3e6d4;
+      --ok: #1f6b45;
+      --stop: #8d2e2e;
+      --shadow: 0 24px 60px rgba(15, 37, 55, 0.28);
+      font-family: "Segoe UI", "Avenir Next", "Trebuchet MS", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { color: var(--ink); background: #101820; }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: 0.55; }
+
+    .foto {
+      position: fixed; inset: 0;
+      background: #101820 center / cover no-repeat;
+      transform: scale(1.04);
+      transition: opacity 0.8s ease;
+    }
+    .foto.uit { opacity: 0; }
+    .sluier {
+      position: fixed; inset: 0;
+      background:
+        linear-gradient(180deg, rgba(15, 23, 32, 0.18) 0%, rgba(15, 23, 32, 0.55) 70%, rgba(15, 23, 32, 0.78) 100%);
+    }
+
+    .poort {
+      position: relative; z-index: 2;
+      min-height: 100%;
+      display: grid;
+      align-items: end;
+      padding: 28px;
+    }
+    .poort-kaart {
+      width: min(420px, 100%);
+      background: rgba(255, 252, 247, 0.96);
+      border: 1px solid rgba(255,255,255,0.7);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 22px 22px 18px;
+    }
+    .merkrij { display: flex; gap: 12px; align-items: center; }
+    .merkrij img { width: 42px; height: 42px; }
+    .merkrij strong { display: block; letter-spacing: 0.08em; font-size: 12px; text-transform: uppercase; }
+    .merkrij span { display: block; font-family: Georgia, "Iowan Old Style", serif; font-style: italic; color: var(--ink-soft); font-size: 14px; }
+    h1 { font-family: Georgia, "Iowan Old Style", serif; font-weight: 500; font-size: 34px; margin: 18px 0 4px; }
+    .sub { margin: 0 0 16px; color: var(--ink-soft); font-size: 14px; }
+    label { display: grid; gap: 6px; font-size: 13px; margin-bottom: 10px; }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    textarea { min-height: 140px; resize: vertical; }
+    .primair, .secundair, .tekst {
+      border-radius: 10px;
+      padding: 10px 14px;
+      border: 1px solid transparent;
+    }
+    .primair { background: var(--ink); color: #fff; width: 100%; }
+    .secundair { background: transparent; border-color: var(--line); color: var(--ink); }
+    .tekst { background: transparent; border: 0; color: var(--ink-soft); padding: 8px; }
+    .stippen { display: flex; gap: 6px; margin-top: 14px; }
+    .stip {
+      width: 28px; height: 8px; border-radius: 99px;
+      border: 0; background: rgba(15,37,55,0.18); padding: 0;
+    }
+    .stip.aan { background: var(--ink); }
+
+    .app {
+      position: relative; z-index: 2;
+      min-height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      padding: 14px;
+      gap: 12px;
+    }
+    .balk, .werk, .lees, .lijst, .mappen, .opstel, .instel {
+      background: rgba(255, 252, 247, 0.94);
+      border: 1px solid rgba(255,255,255,0.65);
+      border-radius: 16px;
+    }
+    .balk {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px;
+    }
+    .balk img { width: 32px; height: 32px; }
+    .balk .wie { margin-left: auto; font-size: 13px; color: var(--ink-soft); }
+    .balk .acties { display: flex; gap: 8px; }
+    .werk {
+      display: grid;
+      grid-template-columns: 200px 320px 1fr;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .mappen { border-radius: 16px 0 0 16px; border-right: 1px solid var(--line); padding: 12px; background: transparent; }
+    .mapknop {
+      width: 100%; text-align: left;
+      background: transparent; border: 0; border-radius: 10px;
+      padding: 9px 10px; margin-bottom: 4px;
+    }
+    .mapknop.aan { background: var(--ink); color: #fff; }
+    .lijst { border-right: 1px solid var(--line); overflow: auto; background: transparent; border-radius: 0; }
+    .item {
+      width: 100%; text-align: left; background: transparent; border: 0;
+      border-bottom: 1px solid var(--line); padding: 12px 14px;
+    }
+    .item.aan { background: var(--amber-soft); }
+    .item strong { display: block; font-size: 14px; }
+    .item em { display: block; font-style: normal; color: var(--ink-soft); font-size: 13px; margin-top: 2px; }
+    .item small { color: #8a8176; }
+    .lees { padding: 22px 26px 28px; overflow: auto; background: transparent; border: 0; }
+    .lees h2 { font-family: Georgia, serif; font-weight: 500; font-size: 28px; margin: 0 0 8px; }
+    .meta { color: var(--ink-soft); font-size: 13px; margin-bottom: 16px; }
+    .tekstblok { white-space: pre-wrap; line-height: 1.55; font-size: 15px; }
+    .hand {
+      margin-top: 22px;
+      padding-top: 8px;
+    }
+    .groet { font-family: Georgia, "Iowan Old Style", serif; font-size: 16px; margin: 0; }
+    .naam { font-family: Georgia, "Iowan Old Style", serif; font-size: 22px; margin: 8px 0 16px; }
+    .slot {
+      display: flex; gap: 12px; align-items: center;
+      border-top: 1px solid var(--line); padding-top: 14px;
+    }
+    .slot img { width: 42px; height: 42px; }
+    .slot b { display: block; letter-spacing: 0.08em; font-size: 12px; text-transform: uppercase; }
+    .slot span { display: block; font-family: Georgia, serif; font-style: italic; color: var(--ink-soft); }
+    .leeg { color: var(--ink-soft); max-width: 46ch; line-height: 1.5; }
+    .chip {
+      display: inline-block; font-size: 12px; letter-spacing: 0.04em;
+      background: var(--amber-soft); color: var(--amber);
+      border-radius: 99px; padding: 3px 8px; margin-left: 6px;
+    }
+    .chip.ok { background: #e5f3eb; color: var(--ok); }
+    .rij { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+    .primair.smal, .secundair { width: auto; }
+    .opstel, .instel {
+      position: fixed; z-index: 5;
+      right: 18px; bottom: 18px; top: 78px;
+      width: min(560px, calc(100% - 28px));
+      padding: 18px;
+      overflow: auto;
+      box-shadow: var(--shadow);
+    }
+    .kop { display: flex; align-items: center; justify-content: space-between; }
+    .kop h2 { font-family: Georgia, serif; font-weight: 500; margin: 0; }
+    .keuze { display: flex; gap: 8px; margin: 8px 0 14px; }
+    .keuze button { flex: 1; }
+    .keuze button.aan { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .fout { color: var(--stop); font-size: 13px; min-height: 1.2em; }
+    @media (max-width: 900px) {
+      .werk { grid-template-columns: 1fr; }
+      .mappen { display: flex; gap: 6px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); border-radius: 16px 16px 0 0; }
+      .mapknop { width: auto; white-space: nowrap; }
+      .lijst { max-height: 34vh; border-right: 0; }
+      .balk { flex-wrap: wrap; }
+      .balk .wie { margin-left: 0; }
+      .opstel, .instel { left: 14px; right: 14px; width: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="foto-a" class="foto"></div>
+  <div id="foto-b" class="foto uit"></div>
+  <div class="sluier"></div>
+  <div id="app"></div>
+  <script>
+    const FOTOS = [
+      ["achtergronden/dam.jpg", "Dam"],
+      ["achtergronden/fiets.jpg", "Fiets"],
+      ["achtergronden/trio.jpg", "Straat"],
+      ["achtergronden/rug.jpg", "Rug"],
+      ["achtergronden/vest.jpg", "Vest"],
+      ["achtergronden/steeg.jpg", "Steeg"],
+      ["achtergronden/metro.jpg", "Station"],
+      ["achtergronden/portret.jpg", "Portret"]
+    ];
+    const MERK = "https://boaportaal.nl/boa-mark.png";
+    let foto = Number(localStorage.getItem("boa-mail-foto") || 0) % FOTOS.length;
+    let laag = 0;
+    let gebruiker = null;
+    let map = "in";
+    let openId = null;
+    let scherm = "post";
+    let fout = "";
+
+    function esc(v) {
+      return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&", "<": "<", ">": ">", '"': """, "'": "&#39;" }[c]));
+    }
+    function sleutel(deel) { return `boa-mail-${deel}:${gebruiker.local}`; }
+    function lees(deel, anders) {
+      try { return JSON.parse(localStorage.getItem(sleutel(deel))) ?? anders; }
+      catch { return anders; }
+    }
+    function schrijf(deel, waarde) { localStorage.setItem(sleutel(deel), JSON.stringify(waarde)); }
+
+    function raden(local) {
+      const stuk = local.split(".");
+      const mooi = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+      if (stuk.length >= 2 && !/^bp-/i.test(local)) {
+        return { voornaam: mooi(stuk[0]), achternaam: mooi(stuk.slice(1).join(" ")), stijl: "volledig" };
+      }
+      return { voornaam: mooi(local.replace(/-/g, " ")), achternaam: "", stijl: "voornaam" };
+    }
+    function profiel() {
+      return lees("profiel", raden(gebruiker.local));
+    }
+    function toonnaam(p) {
+      const voor = (p.voornaam || "").trim();
+      const achter = (p.achternaam || "").trim();
+      if (p.stijl === "volledig" && achter) return `${voor} ${achter}`.trim();
+      return voor || gebruiker.local;
+    }
+    function zietAccount() {
+      return gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
+    }
+    function mappen() {
+      const basis = [
+        ["in", "Postvak IN"],
+        ["support", "Support"],
+        ["info", "Info"]
+      ];
+      if (zietAccount()) basis.push(["account", "Account"]);
+      basis.push(["verzonden", "Verzonden"]);
+      return basis;
+    }
+    function post() { return lees("post", []); }
+    function zetPost(lijst) { schrijf("post", lijst); }
+
+    function zaai() {
+      if (localStorage.getItem(sleutel("gezaaid"))) return;
+      zetPost([{
+        id: "voorbeeld-support",
+        map: "support",
+        van: "Mail",
+        aan: "support@boaportaal.nl",
+        onderwerp: "Zo werkt een gedeeld bericht",
+        tekst: "Dit bericht staat in Support, zodat je de claim kunt proberen.\n\nClaim het eerst. Daarna kun jij als enige antwoorden. Je antwoord gaat uit vanaf je eigen adres en blijft zichtbaar voor de anderen.\n\nEen mail die je zelf begint, buiten Support en Info, blijft privé.",
+        tijd: Date.now(),
+        claim: null,
+        voorbeeld: true
+      }]);
+      localStorage.setItem(sleutel("gezaaid"), "1");
+    }
+
+    function toonFoto(index, direct) {
+      foto = (index + FOTOS.length) % FOTOS.length;
+      localStorage.setItem("boa-mail-foto", String(foto));
+      const doel = laag === 0 ? "foto-b" : "foto-a";
+      const weg = laag === 0 ? "foto-a" : "foto-b";
+      const el = document.getElementById(doel);
+      el.style.backgroundImage = `url("${FOTOS[foto][0]}")`;
+      if (direct) {
+        document.getElementById("foto-a").style.backgroundImage = `url("${FOTOS[foto][0]}")`;
+        document.getElementById("foto-b").classList.add("uit");
+        document.getElementById("foto-a").classList.remove("uit");
+        laag = 0;
+        return;
+      }
+      el.classList.remove("uit");
+      document.getElementById(weg).classList.add("uit");
+      laag = laag === 0 ? 1 : 0;
+    }
+
+    function stippen() {
+      return `<div class="stippen">${FOTOS.map((f, i) => `<button class="stip ${i === foto ? "aan" : ""}" data-foto="${i}" aria-label="${esc(f[1])}"></button>`).join("")}</div>`;
+    }
+
+    function handtekeningBlok(naam) {
+      return `<div class="hand">
+        <p class="groet">Met vriendelijke groet,</p>
+        <p class="naam">${esc(naam)}</p>
+        <div class="slot">
+          <img src="/merk.png" alt="">
+          <div>
+            <b>BOA Portaal</b>
+            <span>Voor BOA's, door BOA's</span>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    function handtekeningHtml(naam) {
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;border-collapse:collapse;">
+        <tr><td style="font-family:Georgia,'Iowan Old Style',Palatino,serif;font-size:16px;line-height:1.4;color:#1c1917;">Met vriendelijke groet,</td></tr>
+        <tr><td style="font-family:Georgia,'Iowan Old Style',Palatino,serif;font-size:22px;line-height:1.3;color:#0f2537;padding:8px 0 16px;">${esc(naam)}</td></tr>
+        <tr><td style="border-top:1px solid #e3d9cc;padding-top:14px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="padding-right:12px;vertical-align:middle;"><img src="${MERK}" width="42" height="42" alt="" style="display:block;border:0;width:42px;height:42px;"></td>
+            <td style="vertical-align:middle;font-family:Segoe UI,Avenir Next,Trebuchet MS,sans-serif;">
+              <div style="font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f2537;">BOA Portaal</div>
+              <div style="font-family:Georgia,serif;font-style:italic;font-size:14px;color:#3d4c59;padding-top:2px;">Voor BOA's, door BOA's</div>
+            </td>
+          </tr></table>
+        </td></tr>
+      </table>`;
+    }
+
+    function lijst() {
+      return post()
+        .filter((b) => b.map === map)
+        .sort((a, b) => b.tijd - a.tijd);
+    }
+    function huidig() {
+      return post().find((b) => b.id === openId) || null;
+    }
+
+    function tekenLogin() {
+      document.getElementById("app").innerHTML = `<div class="poort"><form class="poort-kaart" id="inlog">
+        <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
+        <h1>Mail</h1>
+        <p class="sub">Je eigen postbus. Support en Info lees je met het hele team.</p>
+        <label>Adres<input name="email" type="email" autocomplete="username" required placeholder="joshua.bosma@boaportaal.nl"></label>
+        <label>Wachtwoord<input name="wachtwoord" type="password" autocomplete="current-password" required></label>
+        <p class="fout">${esc(fout)}</p>
+        <button class="primair" type="submit">Inloggen</button>
+        ${stippen()}
+      </form></div>`;
+      document.getElementById("inlog").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const email = String(new FormData(e.target).get("email") || "").trim().toLowerCase();
+        const wachtwoord = String(new FormData(e.target).get("wachtwoord") || "");
+        if (!email.endsWith("@boaportaal.nl") || wachtwoord.length < 8) {
+          fout = "Gebruik je adres op boaportaal.nl en het wachtwoord van die postbus.";
+          teken();
+          return;
+        }
+        fout = "";
+        gebruiker = { email, local: email.split("@")[0] };
+        sessionStorage.setItem("boa-mail-gebruiker", JSON.stringify(gebruiker));
+        zaai();
+        map = "in";
+        openId = null;
+        scherm = "post";
+        teken();
+      });
+      document.querySelectorAll("[data-foto]").forEach((knoop) => {
+        knoop.addEventListener("click", () => toonFoto(Number(knoop.dataset.foto), true));
+      });
+    }
+
+    function berichtHtml(b) {
+      const gedeeld = b.map === "support" || b.map === "info";
+      const vanMij = b.claim && b.claim.local === gebruiker.local;
+      const geclaimd = Boolean(b.claim);
+      let actie = "";
+      if (gedeeld && !geclaimd) {
+        actie = `<div class="rij"><button class="primair smal" id="claim" type="button">Claim</button></div>`;
+      } else if (gedeeld && vanMij) {
+        actie = `<p class="meta"><span class="chip ok">Geclaimd door jou</span></p><div class="rij"><button class="primair smal" id="antwoord" type="button">Antwoorden</button></div>`;
+      } else if (gedeeld) {
+        actie = `<p class="meta"><span class="chip">Geclaimd door ${esc(b.claim.naam)}</span> Alleen die persoon antwoordt.</p>`;
+      } else if (b.map !== "verzonden") {
+        actie = `<div class="rij"><button class="primair smal" id="antwoord" type="button">Antwoorden</button></div>`;
+      }
+      return `<h2>${esc(b.onderwerp)}</h2>
+        <p class="meta">Van ${esc(b.van)} · aan ${esc(b.aan)} · ${esc(new Date(b.tijd).toLocaleString("nl-NL"))}${b.voorbeeld ? ` <span class="chip">Voorbeeld</span>` : ""}</p>
+        <div class="tekstblok">${esc(b.tekst)}</div>
+        ${b.handtekening ? handtekeningBlok(b.handtekening) : ""}
+        ${actie}`;
+    }
+
+    function tekenPost() {
+      const items = lijst();
+      const b = huidig();
+      const p = profiel();
+      document.getElementById("app").innerHTML = `<div class="app">
+        <header class="balk">
+          <img src="/merk.png" alt="">
+          <strong>Mail</strong>
+          <span class="wie">${esc(gebruiker.email)}</span>
+          <div class="acties">
+            <button class="secundair" id="nieuw" type="button">Nieuw bericht</button>
+            <button class="secundair" id="naar-hand" type="button">Handtekening</button>
+            <button class="tekst" id="uit" type="button">Afmelden</button>
+          </div>
+        </header>
+        <div class="werk">
+          <nav class="mappen">${mappen().map(([id, label]) => `<button class="mapknop ${map === id ? "aan" : ""}" data-map="${id}" type="button">${label}</button>`).join("")}</nav>
+          <div class="lijst">${items.length ? items.map((item) => `<button class="item ${item.id === openId ? "aan" : ""}" data-id="${esc(item.id)}" type="button"><strong>${esc(item.van)}</strong><em>${esc(item.onderwerp)}</em><small>${esc(new Date(item.tijd).toLocaleString("nl-NL"))}</small></button>`).join("") : `<p class="leeg" style="padding:16px;">Geen berichten in deze map.</p>`}</div>
+          <article class="lees">${b ? berichtHtml(b) : `<p class="leeg">${map === "in" ? "Je privépost staat hier. Die ziet niemand anders." : map === "support" || map === "info" ? "Binnenkomende post op dit adres ziet het hele team. Claim een bericht voordat je antwoordt, zodat niet iedereen tegelijk terugmailt." : map === "account" ? "Automatische post van account@ komt bij Joshua binnen. De andere medewerkers zien deze map niet." : "Verzonden berichten, met de handtekening eronder."}</p>`}</article>
+        </div>
+        ${scherm === "nieuw" || scherm === "antwoord" ? opstelHtml(p) : ""}
+        ${scherm === "hand" ? instelHtml(p) : ""}
+      </div>`;
+      bindPost(p);
+    }
+
+    function opstelHtml(p) {
+      const bron = scherm === "antwoord" ? huidig() : null;
+      const aan = bron ? bron.van.includes("@") ? bron.van : "" : "";
+      const onderwerp = bron ? (bron.onderwerp.startsWith("Re:") ? bron.onderwerp : `Re: ${bron.onderwerp}`) : "";
+      return `<form class="opstel" id="opstel">
+        <div class="kop"><h2>${scherm === "antwoord" ? "Antwoorden" : "Nieuw bericht"}</h2><button class="tekst" id="dicht" type="button">Sluiten</button></div>
+        <label>Aan<input name="aan" type="email" required value="${esc(aan)}"></label>
+        <label>Onderwerp<input name="onderwerp" required value="${esc(onderwerp)}"></label>
+        <label>Bericht<textarea name="tekst" required></textarea></label>
+        <p class="sub">De handtekening gaat altijd mee. Die staat vast, als ${esc(toonnaam(p))}.</p>
+        ${handtekeningBlok(toonnaam(p))}
+        <p class="fout">${esc(fout)}</p>
+        <button class="primair" type="submit">Verzenden</button>
+      </form>`;
+    }
+
+    function instelHtml(p) {
+      return `<form class="instel" id="instel">
+        <div class="kop"><h2>Handtekening</h2><button class="tekst" id="dicht" type="button">Sluiten</button></div>
+        <p class="sub">Elke mail krijgt dezelfde handtekening. Je kiest alleen hoe je naam er staat.</p>
+        <label>Voornaam<input name="voornaam" required value="${esc(p.voornaam)}"></label>
+        <label>Achternaam<input name="achternaam" value="${esc(p.achternaam)}"></label>
+        <div class="keuze">
+          <button class="secundair ${p.stijl !== "volledig" ? "aan" : ""}" type="button" data-stijl="voornaam">Alleen voornaam</button>
+          <button class="secundair ${p.stijl === "volledig" ? "aan" : ""}" type="button" data-stijl="volledig">Voornaam en achternaam</button>
+        </div>
+        <input type="hidden" name="stijl" value="${esc(p.stijl || "voornaam")}">
+        ${handtekeningBlok(toonnaam(p))}
+        <button class="primair" type="submit">Bewaren</button>
+      </form>`;
+    }
+
+    function bindPost(p) {
+      document.querySelectorAll("[data-map]").forEach((knoop) => knoop.addEventListener("click", () => {
+        map = knoop.dataset.map; openId = null; scherm = "post"; teken();
+      }));
+      document.querySelectorAll("[data-id]").forEach((knoop) => knoop.addEventListener("click", () => {
+        openId = knoop.dataset.id; scherm = "post"; teken();
+      }));
+      document.getElementById("nieuw")?.addEventListener("click", () => { fout = ""; scherm = "nieuw"; teken(); });
+      document.getElementById("naar-hand")?.addEventListener("click", () => { scherm = "hand"; teken(); });
+      document.getElementById("uit")?.addEventListener("click", () => {
+        gebruiker = null; sessionStorage.removeItem("boa-mail-gebruiker"); teken();
+      });
+      document.getElementById("dicht")?.addEventListener("click", () => { scherm = "post"; fout = ""; teken(); });
+      document.getElementById("claim")?.addEventListener("click", () => {
+        const lijst = post();
+        const item = lijst.find((r) => r.id === openId);
+        if (!item || item.claim) return;
+        item.claim = { local: gebruiker.local, naam: toonnaam(profiel()) };
+        zetPost(lijst);
+        teken();
+      });
+      document.getElementById("antwoord")?.addEventListener("click", () => { fout = ""; scherm = "antwoord"; teken(); });
+      document.getElementById("opstel")?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const aan = String(f.get("aan") || "").trim();
+        const onderwerp = String(f.get("onderwerp") || "").trim();
+        const tekst = String(f.get("tekst") || "").trim();
+        const naam = toonnaam(profiel());
+        const gedeeld = map === "support" || map === "info";
+        const id = `m-${Date.now()}`;
+        const bericht = {
+          id, map: "verzonden", van: gebruiker.email, aan, onderwerp, tekst,
+          tijd: Date.now(), claim: null, handtekening: naam,
+          html: handtekeningHtml(naam)
+        };
+        const lijst = post();
+        lijst.push(bericht);
+        if (gedeeld && scherm === "antwoord") {
+          lijst.push({ ...bericht, id: `${id}-kopie`, map, van: naam, aan: `${map}@boaportaal.nl` });
+        }
+        zetPost(lijst);
+        fout = "";
+        scherm = "post";
+        map = "verzonden";
+        openId = id;
+        teken();
+      });
+      document.getElementById("instel")?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        schrijf("profiel", {
+          voornaam: String(f.get("voornaam") || "").trim(),
+          achternaam: String(f.get("achternaam") || "").trim(),
+          stijl: String(f.get("stijl") || "voornaam")
+        });
+        scherm = "post";
+        teken();
+      });
+      document.querySelectorAll("[data-stijl]").forEach((knoop) => knoop.addEventListener("click", () => {
+        const veld = document.querySelector("#instel [name=stijl]");
+        veld.value = knoop.dataset.stijl;
+        const vers = {
+          voornaam: document.querySelector("#instel [name=voornaam]").value,
+          achternaam: document.querySelector("#instel [name=achternaam]").value,
+          stijl: knoop.dataset.stijl
+        };
+        schrijf("profiel", vers);
+        teken();
+      }));
+    }
+
+    function teken() {
+      if (!gebruiker) tekenLogin();
+      else tekenPost();
+    }
+
+    try { gebruiker = JSON.parse(sessionStorage.getItem("boa-mail-gebruiker") || "null"); } catch { gebruiker = null; }
+    toonFoto(foto, true);
+    setInterval(() => { if (!gebruiker) toonFoto(foto + 1, false); }, 8000);
+    teken();
+  </script>
+</body>
+</html>
