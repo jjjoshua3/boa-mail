@@ -1,0 +1,10 @@
+{
+  "name": "boa-mail",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "imapflow": "2.11.0",
+    "mailparser": "3.14.3",
+    "nodemailer": "10.5.0"
+  }
+}

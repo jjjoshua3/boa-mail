@@ -2,9 +2,13 @@
 
 Webmail voor mail.boaportaal.nl.
 
-- Achtergronden op het inlogscherm, te kiezen met de stippen.
-- Handtekening gaat bij elk bericht mee: alleen voornaam, of voornaam en achternaam.
-- Support en Info zijn gedeeld. Een bericht claimen, daarna antwoordt alleen die persoon.
-- Account is alleen zichtbaar voor joshua.bosma en beheerder.
+Inloggen gebeurt op de echte postbus. Het wachtwoord van iemand anders opent die postbus niet. Support, info en account zijn geen login.
 
-De postbus zelf staat bij Purelymail. Deze site bewaart de handtekening en verzonden berichten in de browser tot de koppeling met de postbus is gezet.
+Gedeelde postbussen leest de server met een eigen sleutel. Die sleutels staan alleen als omgevingsvariabelen, niet in deze code:
+
+- `SESSION_SECRET`
+- `PURELYMAIL_SUPPORT_PASSWORD`
+- `PURELYMAIL_INFO_PASSWORD`
+- `PURELYMAIL_ACCOUNT_PASSWORD`
+
+Account is alleen zichtbaar voor joshua.bosma en beheerder.
