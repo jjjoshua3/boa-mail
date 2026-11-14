@@ -203,7 +203,13 @@
     let fout = "";
 
     function esc(v) {
-      return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&", "<": "<", ">": ">", '"': """, "'": "&#39;" }[c]));
+      return String(v ?? "").replace(/[&<>"']/g, (c) => {
+        if (c === "&") return "&" + "amp;";
+        if (c === "<") return "&" + "lt;";
+        if (c === ">") return "&" + "gt;";
+        if (c === '"') return "&" + "quot;";
+        return "&" + "#39;";
+      });
     }
     function sleutel(deel) { return `boa-mail-${deel}:${gebruiker.local}`; }
     function lees(deel, anders) {
