@@ -123,6 +123,7 @@ export function handtekeningHtml(naam) {
         <td style="vertical-align:middle;font-family:Segoe UI,Trebuchet MS,sans-serif;">
           <div style="font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f2537;">BOA Portaal</div>
           <div style="font-family:Georgia,serif;font-style:italic;font-size:14px;color:#3d4c59;padding-top:2px;">Voor BOA's, door BOA's</div>
+          <div style="padding-top:4px;font-size:13px;line-height:1.3;"><a href="https://boaportaal.nl" style="color:#0f2537;text-decoration:none;">boaportaal.nl</a></div>
         </td>
       </tr></table>
     </td></tr>
@@ -130,7 +131,7 @@ export function handtekeningHtml(naam) {
 }
 
 export function handtekeningTekst(naam) {
-  return `\n\nMet vriendelijke groet,\n\n${schoneRegel(naam, 80)}\n\nBOA Portaal\nVoor BOA's, door BOA's\n`;
+  return `\n\nMet vriendelijke groet,\n\n${schoneRegel(naam, 80)}\n\nBOA Portaal\nVoor BOA's, door BOA's\nhttps://boaportaal.nl\n`;
 }
 
 async function metPostbus(email, pass, werk) {
@@ -377,12 +378,44 @@ export function openToken(token) {
 export async function mailLog(soort, local, reden, resultaat, ip) {
   const sb = dienst();
   if (!sb) return { fout: "geen sleutel" };
-  const { error } = await sb.rpc("boa_mail_gebeurtenis", {
-    p_local: local,
-    p_soort: soort,
-    p_reden: String(reden || "").slice(0, 240),
-    p_resultaat: resultaat || "",
-    p_ip: ip || "",
+  const naam = String(local || "").trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(naam)) return { fout: "onbekende postbus" };
+  const cid = /^bp-[0-9]{4}-[a-z]{2}$/.test(naam) ? naam.toUpperCase() : naam;
+  const soortNorm = String(soort || "").trim().toUpperCase();
+  const ipSchoon = String(ip || "").replace(/[^0-9a-fA-F:.]/g, "").slice(0, 64);
+  if (soortNorm === "MAIL_LOGIN") {
+    let user_id = null;
+    let pv_naam = "";
+    if (/^BP-/.test(cid)) {
+      const { data } = await sb.from("boa_identiteit").select("user_id, pv_naam").eq("client_id", cid).maybeSingle();
+      if (data) {
+        user_id = data.user_id ?? null;
+        pv_naam = data.pv_naam || "";
+      }
+    }
+    const uitkomst = String(resultaat || "").toLowerCase() === "geslaagd" ? "geslaagd" : "mislukt";
+    const { error } = await sb.from("boa_inlog").insert({
+      user_id,
+      client_id: cid,
+      pv_naam,
+      bron: "mail",
+      resultaat: uitkomst,
+      ip: ipSchoon,
+    });
+    if (error) return { fout: error.message };
+    return { ok: true };
+  }
+  if (!["MAIL_VERZONDEN", "MAIL_CLAIM", "MAIL_UNCLAIM"].includes(soortNorm)) return { fout: "onbekende soort" };
+  const { error } = await sb.from("boa_audit").insert({
+    beheerder_id: cid,
+    beheerder_naam: naam,
+    doel_client_id: "",
+    doel_pv_naam: "",
+    ticketnummer: "",
+    reden: String(reden || "").slice(0, 240),
+    soort: soortNorm,
+    niveau: "INFO",
+    bron: "mail",
   });
   if (error) return { fout: error.message };
   return { ok: true };

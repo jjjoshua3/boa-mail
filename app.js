@@ -95,7 +95,7 @@ function handtekeningBlok(naam) {
     <p class="naam">${esc(naam)}</p>
     <div class="slot">
       <img src="/merk.png" alt="">
-      <div><b>BOA Portaal</b><span>Voor BOA's, door BOA's</span></div>
+      <div><b>BOA Portaal</b><span>Voor BOA's, door BOA's</span><a href="https://boaportaal.nl">boaportaal.nl</a></div>
     </div>
   </div>`;
 }
