@@ -162,6 +162,19 @@ function doel(map, sessie) {
   return { email: GEDEELD[map], pass, mapnaam: "INBOX" };
 }
 
+function headerVeld(bron, naam) {
+  const tekst = Buffer.isBuffer(bron) ? bron.toString("utf8") : String(bron || "");
+  const kop = tekst.split(/\r?\n\r?\n/)[0] || "";
+  const gevouwen = kop.replace(/\r?\n[ \t]+/g, " ");
+  return gevouwen.match(new RegExp(`^${naam}:\\s*(.*)$`, "im"))?.[1]?.trim() || "";
+}
+
+function adresUit(tekst) {
+  const bron = String(tekst || "");
+  const tussen = bron.match(/<([^>]+)>/);
+  const kandidaat = (tussen ? tussen[1] : bron).trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+$/.test(kandidaat) ? kandidaat : "";
+}
 function adresVan(lijst) {
   if (!lijst?.length) return { tekst: "", adres: "" };
   const eerste = lijst[0];
@@ -170,13 +183,21 @@ function adresVan(lijst) {
   return { tekst, adres };
 }
 
-function claimUit(flags, eigen) {
-  let local = "";
+function claimsUit(flags) {
+  const locals = [];
   for (const vlag of flags || []) {
     const gevonden = localVanVlag(String(vlag));
-    if (gevonden) local = gevonden;
+    if (gevonden && !locals.includes(gevonden)) locals.push(gevonden);
   }
-  if (!local) return null;
+  return locals;
+}
+
+function claimUit(flags, eigen) {
+  const locals = claimsUit(flags);
+  if (!locals.length) return null;
+  const ander = locals.find((local) => local !== eigen);
+  if (ander && locals.includes(eigen)) return { local: ander, naam: ander, vanMij: false };
+  const local = locals[0];
   return { local, naam: local, vanMij: local === eigen };
 }
 
@@ -192,18 +213,18 @@ export async function berichten(sessie, map) {
       const laatste = (uids || []).slice(-40);
       const lijst = [];
       if (laatste.length) {
-        for await (const msg of client.fetch(laatste.join(","), { uid: true, envelope: true, flags: true, internalDate: true, headers: ["subject"] }, { uid: true })) {
+        for await (const msg of client.fetch(laatste.join(","), { uid: true, envelope: true, flags: true, internalDate: true, source: { start: 0, maxLength: 8192 } }, { uid: true })) {
           const van = adresVan(msg.envelope?.from);
           const aan = adresVan(msg.envelope?.to);
-          const kop = msg.headers ? msg.headers.toString("utf8") : "";
-          const uitKop = kop.match(/^subject:\s*(.*)$/im)?.[1]?.trim();
+          const bronVan = headerVeld(msg.source, "from");
+          const bronAan = headerVeld(msg.source, "to");
           lijst.push({
             id: `${map}:${msg.uid}`,
             uid: msg.uid,
-            van: van.tekst || gekozen.email,
-            vanAdres: van.adres,
-            aan: aan.tekst,
-            onderwerp: msg.envelope?.subject || uitKop || "(geen onderwerp)",
+            van: van.tekst || bronVan || gekozen.email,
+            vanAdres: van.adres || adresUit(bronVan),
+            aan: aan.tekst || bronAan,
+            onderwerp: msg.envelope?.subject || headerVeld(msg.source, "subject") || "(geen onderwerp)",
             tijd: msg.internalDate ? new Date(msg.internalDate).getTime() : Date.now(),
             claim: (map === "support" || map === "info") ? claimUit(msg.flags, sessie.email.split("@")[0]) : null,
           });
@@ -248,7 +269,15 @@ export async function claim(sessie, map, uid) {
       if (!msg) return { fout: "Bericht niet gevonden.", status: 404 };
       const bestaand = claimUit(msg.flags, local);
       if (bestaand && !bestaand.vanMij) return { fout: `Al geclaimd door ${bestaand.local}.`, status: 409 };
-      if (!bestaand) await client.messageFlagsAdd(String(nummer), [vlagVan(local)], { uid: true });
+      if (!bestaand) {
+        await client.messageFlagsAdd(String(nummer), [vlagVan(local)], { uid: true });
+        const na = await client.fetchOne(String(nummer), { flags: true }, { uid: true });
+        const opnieuw = claimUit(na?.flags, local);
+        if (opnieuw && !opnieuw.vanMij) {
+          await client.messageFlagsRemove(String(nummer), [vlagVan(local)], { uid: true });
+          return { fout: `Al geclaimd door ${opnieuw.local}.`, status: 409 };
+        }
+      }
       return { ok: true };
     } finally { lock.release(); }
   });
@@ -284,12 +313,16 @@ export async function verstuur(sessie, invoer) {
     auth: { user: sessie.email, pass: sessie.pass },
   });
   await smtp.sendMail(mail);
-  const ruw = await new Promise((resolve, reject) => {
-    const stream = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: "unix" });
-    stream.sendMail(mail, (err, info) => (err ? reject(err) : resolve(info.message)));
-  });
-  await metPostbus(sessie.email, sessie.pass, async (client) => {
-    await client.append("Sent", ruw, ["\\Seen"]);
-  });
+  try {
+    const ruw = await new Promise((resolve, reject) => {
+      const stream = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: "windows" });
+      stream.sendMail(mail, (err, info) => (err ? reject(err) : resolve(info.message)));
+    });
+    await metPostbus(sessie.email, sessie.pass, async (client) => {
+      await client.append("Sent", ruw, ["\\Seen"]);
+    });
+  } catch {
+    return { ok: true, kopie: false };
+  }
   return { ok: true };
 }

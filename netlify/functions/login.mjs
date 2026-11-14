@@ -10,13 +10,14 @@ export async function handler(event) {
     const local = adres.split("@")[0];
     if (!geldigAdres(adres)) return antwoord(400, { fout: "Gebruik je eigen adres op boaportaal.nl." });
     if (DIENST.has(local)) return antwoord(403, { fout: "Log in met je eigen postbus, niet met support, info of account." });
-    if (String(wachtwoord || "").length < 8) return antwoord(401, { fout: "Dit adres en wachtwoord horen niet bij een postbus." });
+    const geheim = String(wachtwoord || "");
+    if (geheim.length < 8 || geheim.length > 200) return antwoord(401, { fout: "Dit adres en wachtwoord horen niet bij een postbus." });
     try {
-      await controleerLogin(adres, String(wachtwoord));
+      await controleerLogin(adres, geheim);
     } catch {
       return antwoord(401, { fout: "Dit adres en wachtwoord horen niet bij een postbus." });
     }
-    const token = verzegel({ email: adres, pass: String(wachtwoord), exp: Date.now() + 12 * 60 * 60 * 1000 });
+    const token = verzegel({ email: adres, pass: geheim, exp: Date.now() + 12 * 60 * 60 * 1000 });
     return antwoord(200, { email: adres, local }, { "set-cookie": koekje(token, 12 * 60 * 60) });
   } catch {
     return antwoord(500, { fout: "Inloggen lukt nu niet. Probeer het opnieuw." });
