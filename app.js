@@ -245,7 +245,6 @@ function opstelHtml(p) {
       <input name="aan" type="text" required value="${esc(aan)}" placeholder="info" autocomplete="off" autocapitalize="none" spellcheck="false">
       <div class="lijstje" id="tips" hidden></div>
     </label>
-    <p class="sub">Typ een stukje. beh wordt beheerder, jos wordt joshua.bosma, claudia de postbus van die collega. Zonder @boaportaal.nl.</p>
     <label>Onderwerp<input name="onderwerp" required value="${esc(onderwerp)}"></label>
     <label>Bericht<textarea name="tekst" required></textarea></label>
     <label>Bijlagen<input name="bijlagen" type="file" multiple></label>
