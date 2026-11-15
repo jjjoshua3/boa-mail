@@ -159,7 +159,15 @@
     .lees { padding: 22px 26px 28px; overflow: auto; background: transparent; border: 0; }
     .lees h2 { font-family: Georgia, serif; font-weight: 500; font-size: 28px; margin: 0 0 8px; }
     .meta { color: var(--ink-soft); font-size: 13px; margin-bottom: 16px; }
-    .tekstblok { white-space: pre-wrap; line-height: 1.55; font-size: 15px; }
+    .tekstblok { white-space: pre-wrap; line-height: 1.55; font-size: 15px; overflow-wrap: anywhere; }
+    .tekstblok a, .mailhtml a, .maillinks a { color: #1e3a5f; text-decoration: underline; overflow-wrap: anywhere; }
+    .mailhtml { font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
+    .mailhtml img { max-width: 100%; height: auto; }
+    .mailhtml table { max-width: 100%; }
+    .maillinks { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .maillinks p { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+    .maillinks ul { margin: 0; padding-left: 18px; }
+    .maillinks li { margin: 4px 0; }
     .bijlagen { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
     .hand {
       margin-top: 22px;

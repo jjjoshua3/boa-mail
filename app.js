@@ -159,6 +159,14 @@ function leegtekst() {
   return "Verzonden berichten, met de handtekening eronder.";
 }
 
+function linkify(tekst) {
+  return String(tekst || "").split(/(https?:\/\/[^\s<]+)/gi).map((deel) => {
+    if (!/^https?:\/\//i.test(deel)) return esc(deel);
+    const url = deel.replace(/[).,;]+$/, "");
+    return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>${esc(deel.slice(url.length))}`;
+  }).join("");
+}
+
 function berichtHtml(b) {
   const gedeeld = map === "support" || map === "info";
   const geclaimd = Boolean(b.claim);
@@ -178,10 +186,15 @@ function berichtHtml(b) {
     if (knoppen.length) actie += `<div class="rij">${knoppen.join("")}</div>`;
   }
   const tekst = b.tekst == null ? "Bezig met openen…" : b.tekst;
+  const lichaam = b.html
+    ? `<div class="mailhtml">${b.html}</div>`
+    : `<div class="tekstblok">${linkify(tekst)}</div>`;
+  const links = (b.links || []).map((link) => `<li><a href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${esc(link.label || link.url)}</a></li>`).join("");
   const bijlagen = (b.bijlagen || []).map((stuk) => `<li><button class="tekst" type="button" data-bijlage="${stuk.id}">${esc(stuk.naam)} · ${esc(formaat(stuk.grootte))}</button></li>`).join("");
   return `<h2>${esc(b.onderwerp)}</h2>
     <p class="meta">Van ${esc(b.van)} · aan ${esc(b.aan)} · ${esc(new Date(b.tijd).toLocaleString("nl-NL"))}</p>
-    <div class="tekstblok">${esc(tekst)}</div>
+    ${lichaam}
+    ${links ? `<div class="maillinks"><p>Links in dit bericht</p><ul>${links}</ul></div>` : ""}
     ${bijlagen ? `<ul class="bijlagen">${bijlagen}</ul>` : ""}
     ${actie}`;
 }
@@ -213,6 +226,8 @@ async function vul() {
     const data = await api(`/api/post?map=${encodeURIComponent(map)}&id=${encodeURIComponent(uid)}`);
     if (openId !== id) return;
     item.tekst = data.tekst || "";
+    item.html = data.html || "";
+    item.links = data.links || [];
     item.bijlagen = data.bijlagen || [];
     if (data.claim) item.claim = data.claim;
     teken();

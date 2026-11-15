@@ -311,7 +311,149 @@ export async function berichten(sessie, map) {
 }
 
 function bijlagenVan(parsed) {
-  return (parsed.attachments || []).filter((stuk) => stuk.filename || stuk.contentDisposition === "attachment");
+  return (parsed.attachments || []).filter((stuk) => {
+    if (!stuk?.content?.length) return false;
+    const plaats = String(stuk.contentDisposition || "").toLowerCase();
+    const naam = String(stuk.filename || "");
+    if (plaats === "attachment") return true;
+    if (stuk.cid && !naam) return false;
+    if (stuk.cid && plaats === "inline" && /^image\//i.test(stuk.contentType || "")) return false;
+    return Boolean(naam);
+  });
+}
+
+function htmlEntities(waarde) {
+  return String(waarde || "")
+    .replace(new RegExp("&" + "nbsp;", "gi"), " ")
+    .replace(new RegExp("&" + "amp;", "gi"), "&")
+    .replace(new RegExp("&" + "lt;", "gi"), "<")
+    .replace(new RegExp("&" + "gt;", "gi"), ">")
+    .replace(new RegExp("&" + "quot;", "gi"), '"')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+      const code = Number.parseInt(hex, 16);
+      return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : "";
+    })
+    .replace(/&#(\d+);/g, (_, dec) => {
+      const code = Number(dec);
+      return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : "";
+    });
+}
+
+function attrVan(attrs, naam) {
+  const match = String(attrs || "").match(new RegExp(`\\b${naam}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s"'=<>]+))`, "i"));
+  if (!match) return "";
+  return htmlEntities(match[2] ?? match[3] ?? match[4] ?? "").trim();
+}
+
+function veiligUrl(ruw) {
+  const url = htmlEntities(ruw).replace(/[\u0000-\u001f\s]+/g, "").trim();
+  if (!url || url.length > 2000) return "";
+  if (/^(javascript|data|vbscript):/i.test(url)) return "";
+  if (!/^(https?:\/\/|mailto:)/i.test(url)) return "";
+  return url;
+}
+
+function escHtml(waarde) {
+  return String(waarde || "")
+    .replace(/&/g, "&" + "amp;")
+    .replace(/</g, "&" + "lt;")
+    .replace(/>/g, "&" + "gt;")
+    .replace(/"/g, "&" + "quot;");
+}
+
+const MAIL_TAGS = new Set(["a", "p", "br", "div", "span", "strong", "b", "em", "i", "u", "ul", "ol", "li", "h1", "h2", "h3", "blockquote", "table", "thead", "tbody", "tr", "td", "th", "img", "hr", "pre", "code"]);
+
+function cidBeelden(parsed) {
+  const map = new Map();
+  for (const stuk of parsed.attachments || []) {
+    if (!stuk?.cid || !stuk.content?.length || stuk.content.length > 200000) continue;
+    if (!/^image\//i.test(stuk.contentType || "")) continue;
+    const type = String(stuk.contentType || "image/png").split(";")[0];
+    map.set(String(stuk.cid).replace(/[<>]/g, ""), `data:${type};base64,${stuk.content.toString("base64")}`);
+  }
+  return map;
+}
+
+function veiligHtml(html, beelden) {
+  const bron = String(html || "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(script|style|iframe|object|embed|form|meta|link|head|title)\b[\s\S]*?<\/\1>/gi, "")
+    .replace(/<(script|style|iframe|object|embed|form|meta|link)\b[^>]*\/?>/gi, "");
+  if (!bron || bron.length > 400000) return "";
+  let uit = "";
+  const stapel = [];
+  const re = /<\/?([a-z0-9]+)(\s[^<>]*)?>/gi;
+  let laatste = 0;
+  let match;
+  while ((match = re.exec(bron))) {
+    uit += bron.slice(laatste, match.index).replace(/</g, "");
+    laatste = match.index + match[0].length;
+    const naam = match[1].toLowerCase();
+    const attrs = match[2] || "";
+    const sluit = match[0].startsWith("</");
+    if (!MAIL_TAGS.has(naam)) continue;
+    if (sluit) {
+      const zoek = naam === "a" && stapel.lastIndexOf("xa") > stapel.lastIndexOf("a") ? "xa" : naam;
+      const plek = stapel.lastIndexOf(zoek);
+      if (plek < 0) continue;
+      while (stapel.length > plek) {
+        const open = stapel.pop();
+        uit += open === "xa" ? "</span>" : `</${open}>`;
+      }
+      continue;
+    }
+    if (naam === "br" || naam === "hr") {
+      uit += `<${naam}>`;
+      continue;
+    }
+    if (naam === "img") {
+      let src = attrVan(attrs, "src");
+      if (/^cid:/i.test(src)) src = beelden.get(src.slice(4).replace(/[<>]/g, "")) || "";
+      if (!/^https:\/\//i.test(src) && !src.startsWith("data:image/")) continue;
+      uit += `<img src="${escHtml(src)}" alt="${escHtml(attrVan(attrs, "alt"))}">`;
+      continue;
+    }
+    if (naam === "a") {
+      const href = veiligUrl(attrVan(attrs, "href"));
+      if (!href) {
+        stapel.push("xa");
+        uit += "<span>";
+      } else {
+        stapel.push("a");
+        uit += `<a href="${escHtml(href)}" target="_blank" rel="noopener noreferrer">`;
+      }
+      continue;
+    }
+    stapel.push(naam);
+    uit += `<${naam}>`;
+  }
+  uit += bron.slice(laatste).replace(/</g, "");
+  while (stapel.length) {
+    const open = stapel.pop();
+    uit += open === "xa" ? "</span>" : `</${open}>`;
+  }
+  return uit;
+}
+
+function linksUit(html, tekst) {
+  const gevonden = [];
+  const gezien = new Set();
+  const voeg = (url, label) => {
+    const schoon = veiligUrl(url);
+    if (!schoon || gezien.has(schoon)) return;
+    gezien.add(schoon);
+    const naam = String(label || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+    gevonden.push({ url: schoon, label: naam && naam !== schoon ? naam : schoon });
+  };
+  String(html || "").replace(/<a\b[^>]*\bhref\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>]+))[^>]*>([\s\S]*?)<\/a>/gi, (_, _q, dubbel, enkel, kaal, binnen) => {
+    voeg(dubbel || enkel || kaal, binnen);
+    return "";
+  });
+  for (const match of `${tekst || ""}\n${html || ""}`.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
+    voeg(match[0].replace(/[).,;]+$/, ""), "");
+    if (gevonden.length >= 25) break;
+  }
+  return gevonden.slice(0, 25);
 }
 
 function schoonBestand(naam, index) {
@@ -347,9 +489,12 @@ export async function bericht(sessie, map, uid, bijlage) {
           data: stuk.content.toString("base64"),
         };
       }
-      const tekst = parsed.text || String(parsed.html || "").replace(/<[^>]+>/g, " ").replace(/\s+\n/g, "\n").trim();
+      const tekst = parsed.text || String(parsed.html || "").replace(/<[^>]+>/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+      const html = veiligHtml(parsed.html || "", cidBeelden(parsed));
       return {
         tekst,
+        html,
+        links: linksUit(parsed.html || "", tekst),
         bijlagen: alle.map((stuk, index) => ({
           id: index,
           naam: schoonBestand(stuk.filename, index),
