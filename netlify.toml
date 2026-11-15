@@ -11,6 +11,10 @@
   status = 200
   force = true
 
+[[edge_functions]]
+  function = "poort"
+  path = "/*"
+
 [[headers]]
   for = "/*"
   [headers.values]
