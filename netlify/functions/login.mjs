@@ -10,6 +10,16 @@ function naarAdres(ruw) {
   return s;
 }
 
+async function slaIp(ip) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key || !ip) return;
+  await fetch("https://systeem.boaportaal.nl/.netlify/functions/ip", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    body: JSON.stringify({ actie: "poging", bron: "mail", ip }),
+  }).catch(() => null);
+}
+
 function profiel(adres) {
   const local = adres.split("@")[0];
   return {
@@ -31,6 +41,7 @@ export async function handler(event) {
       const check = await bevestigBeheer(open, body.code);
       if (check.fout) {
         await mailLog("MAIL_LOGIN", local, "onjuiste authenticatorcode", "mislukt", ip);
+        await slaIp(ip);
         return antwoord(401, { fout: check.fout });
       }
       const token = verzegel({ email: open.email, pass: open.pass, exp: Date.now() + 12 * 60 * 60 * 1000 });
@@ -44,12 +55,14 @@ export async function handler(event) {
     const geheim = String(body.wachtwoord || "");
     if (geheim.length < 8 || geheim.length > 200) {
       await mailLog("MAIL_LOGIN", local, "geweigerd", "mislukt", ip);
+      await slaIp(ip);
       return antwoord(401, { fout: "Deze loginnaam en dit wachtwoord horen niet bij een postbus." });
     }
     try {
       await controleerLogin(adres, geheim);
     } catch {
       await mailLog("MAIL_LOGIN", local, "wachtwoord onjuist", "mislukt", ip);
+      await slaIp(ip);
       return antwoord(401, { fout: "Deze loginnaam en dit wachtwoord horen niet bij een postbus." });
     }
     let beheer = { letop: "" };
