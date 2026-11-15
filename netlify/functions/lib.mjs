@@ -574,19 +574,36 @@ export async function mailLog(soort, local, reden, resultaat, ip) {
   const soortNorm = String(soort || "").trim().toUpperCase();
   const ipSchoon = String(ip || "").replace(/[^0-9a-fA-F:.]/g, "").slice(0, 64);
   if (soortNorm === "MAIL_LOGIN") {
+    const uitkomst = String(resultaat || "").toLowerCase() === "geslaagd" ? "geslaagd" : "mislukt";
     let user_id = null;
     let pv_naam = "";
-    if (/^BP-/.test(cid)) {
+    let client_id = cid;
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const mail = `${naam}@boaportaal.nl`;
+    if (url && key) {
+      const res = await fetch(`${url}/auth/v1/admin/users?filter=${encodeURIComponent(mail)}`, {
+        headers: { apikey: key, Authorization: `Bearer ${key}` },
+      });
+      const json = res.ok ? await res.json().catch(() => ({})) : {};
+      const user = (json.users || []).find((item) => String(item.email || "").toLowerCase() === mail);
+      if (user?.id) {
+        user_id = user.id;
+        const { data } = await sb.from("boa_identiteit").select("client_id, pv_naam").eq("user_id", user.id).maybeSingle();
+        if (data?.client_id) client_id = data.client_id;
+        if (data?.pv_naam) pv_naam = data.pv_naam;
+      }
+    }
+    if (!user_id && /^BP-/.test(cid)) {
       const { data } = await sb.from("boa_identiteit").select("user_id, pv_naam").eq("client_id", cid).maybeSingle();
       if (data) {
         user_id = data.user_id ?? null;
-        pv_naam = data.pv_naam || "";
+        pv_naam = data.pv_naam || pv_naam;
       }
     }
-    const uitkomst = String(resultaat || "").toLowerCase() === "geslaagd" ? "geslaagd" : "mislukt";
     const { error } = await sb.from("boa_inlog").insert({
       user_id,
-      client_id: cid,
+      client_id,
       pv_naam,
       bron: "mail",
       resultaat: uitkomst,
