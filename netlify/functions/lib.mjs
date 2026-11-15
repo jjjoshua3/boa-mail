@@ -105,6 +105,67 @@ function envWachtwoord(local) {
   return process.env[naam] || "";
 }
 
+const PERSOONLIJK = new Set(["in", "verzonden", "concepten", "archief", "prullenbak"]);
+const STANDAARD_PAD = {
+  in: "INBOX",
+  verzonden: "Sent",
+  concepten: "Drafts",
+  archief: "Archive",
+  prullenbak: "Trash",
+};
+
+function gezienUit(flags) {
+  for (const vlag of flags || []) {
+    if (String(vlag).toLowerCase() === "\\seen") return true;
+  }
+  return false;
+}
+
+function kortAdres(tekst, adres) {
+  const naam = String(tekst || "").replace(/<[^>]*>/g, "").replace(/^"|"$/g, "").trim();
+  if (naam && !naam.includes("@")) return naam;
+  return String(adres || naam).split("@")[0] || naam || "";
+}
+
+async function padenVan(client) {
+  if (client._paden) return client._paden;
+  let lijst = [];
+  try { lijst = await client.list(); } catch { lijst = []; }
+  const uit = { ...STANDAARD_PAD };
+  const speciaal = { "\\Sent": "verzonden", "\\Drafts": "concepten", "\\Archive": "archief", "\\Trash": "prullenbak" };
+  const namen = {
+    verzonden: ["sent", "sent items", "verzonden"],
+    concepten: ["drafts", "concepten"],
+    archief: ["archive", "archief"],
+    prullenbak: ["trash", "prullenbak", "deleted", "deleted items"],
+  };
+  for (const box of lijst) {
+    const sleutel = speciaal[box.specialUse];
+    if (sleutel) uit[sleutel] = box.path;
+  }
+  for (const [sleutel, opties] of Object.entries(namen)) {
+    if (lijst.some((box) => box.path === uit[sleutel])) continue;
+    const gevonden = lijst.find((box) => opties.includes(String(box.path).split("/").pop().toLowerCase()));
+    if (gevonden) uit[sleutel] = gevonden.path;
+  }
+  client._paden = uit;
+  client._padlijst = lijst.map((box) => box.path);
+  return uit;
+}
+
+async function padVan(client, map) {
+  const paden = await padenVan(client);
+  return paden[map] || STANDAARD_PAD[map] || "INBOX";
+}
+
+async function zorgPad(client, map) {
+  const pad = await padVan(client, map);
+  if (pad === "INBOX" || (client._padlijst || []).includes(pad)) return pad;
+  try { await client.mailboxCreate(pad); } catch { /* bestaat al */ }
+  client._paden = null;
+  return padVan(client, map);
+}
+
 export function toonnaam(profiel, local) {
   const voor = schoneRegel(profiel?.voornaam, 40);
   const achter = schoneRegel(profiel?.achternaam, 40);
@@ -154,7 +215,7 @@ export async function controleerLogin(email, pass) {
 }
 
 function doel(map, sessie) {
-  if (map === "in" || map === "verzonden") return { email: sessie.email, pass: sessie.pass, mapnaam: map === "verzonden" ? "Sent" : "INBOX" };
+  if (PERSOONLIJK.has(map)) return { email: sessie.email, pass: sessie.pass, persoonlijk: true, map };
   if (!GEDEELD[map]) return null;
   if (map === "account") {
     const local = sessie.email.split("@")[0];
@@ -210,7 +271,10 @@ export async function berichten(sessie, map) {
   if (gekozen.geweigerd) return { fout: "Alleen Joshua en de beheerder zien Account.", status: 403 };
   if (gekozen.ontbreekt) return { fout: "Deze gedeelde postbus is nog niet gekoppeld.", status: 503 };
   return metPostbus(gekozen.email, gekozen.pass, async (client) => {
-    const lock = await client.getMailboxLock(gekozen.mapnaam);
+    const pad = gekozen.mapnaam || await padVan(client, map);
+    let lock;
+    try { lock = await client.getMailboxLock(pad); }
+    catch { return { berichten: [] }; }
     try {
       const uids = await client.search({ all: true }, { uid: true });
       const laatste = (uids || []).slice(-40);
@@ -221,14 +285,20 @@ export async function berichten(sessie, map) {
           const aan = adresVan(msg.envelope?.to);
           const bronVan = headerVeld(msg.source, "from");
           const bronAan = headerVeld(msg.source, "to");
+          const vanTekst = van.tekst || bronVan || gekozen.email;
+          const vanAdres = van.adres || adresUit(bronVan);
+          const aanTekst = aan.tekst || bronAan;
           lijst.push({
             id: `${map}:${msg.uid}`,
             uid: msg.uid,
-            van: van.tekst || bronVan || gekozen.email,
-            vanAdres: van.adres || adresUit(bronVan),
-            aan: aan.tekst || bronAan,
+            van: vanTekst,
+            vanAdres,
+            vanKort: kortAdres(vanTekst, vanAdres),
+            aan: aanTekst,
+            aanAdres: aan.adres || adresUit(bronAan),
             onderwerp: msg.envelope?.subject || headerVeld(msg.source, "subject") || "(geen onderwerp)",
             tijd: msg.internalDate ? new Date(msg.internalDate).getTime() : Date.now(),
+            gezien: gezienUit(msg.flags),
             claim: (map === "support" || map === "info") ? claimUit(msg.flags, sessie.email.split("@")[0]) : null,
           });
         }
@@ -254,10 +324,16 @@ export async function bericht(sessie, map, uid, bijlage) {
   const nummer = Number(uid);
   if (!Number.isInteger(nummer) || nummer < 1) return { fout: "Onbekend bericht.", status: 400 };
   return metPostbus(gekozen.email, gekozen.pass, async (client) => {
-    const lock = await client.getMailboxLock(gekozen.mapnaam);
+    const pad = gekozen.mapnaam || await padVan(client, map);
+    let lock;
+    try { lock = await client.getMailboxLock(pad); }
+    catch { return { fout: "Deze map bestaat nog niet.", status: 404 }; }
     try {
       const msg = await client.fetchOne(String(nummer), { source: true, flags: true }, { uid: true });
       if (!msg?.source) return { fout: "Bericht niet gevonden.", status: 404 };
+      if (!gezienUit(msg.flags)) {
+        await client.messageFlagsAdd(String(nummer), ["\\Seen"], { uid: true }).catch(() => {});
+      }
       const parsed = await simpleParser(msg.source);
       const alle = bijlagenVan(parsed);
       if (bijlage !== undefined && bijlage !== null && bijlage !== "") {
@@ -378,6 +454,78 @@ export async function verstuur(sessie, invoer) {
     return { ok: true, kopie: false };
   }
   await mailLog("MAIL_VERZONDEN", local, `naar ${aan}`, "geslaagd", invoer.ip || "");
+  return { ok: true };
+}
+
+export async function tellers(sessie) {
+  const uit = {};
+  const local = sessie.email.split("@")[0];
+  try {
+    await metPostbus(sessie.email, sessie.pass, async (client) => {
+      const paden = await padenVan(client);
+      for (const id of PERSOONLIJK) {
+        try {
+          const st = await client.status(paden[id], { unseen: true });
+          uit[id] = st.unseen || 0;
+        } catch { uit[id] = 0; }
+      }
+    });
+  } catch { /* tellers blijven leeg */ }
+  const gedeeld = ["support", "info"];
+  if (local === "joshua.bosma" || local === "beheerder") gedeeld.push("account");
+  await Promise.all(gedeeld.map(async (id) => {
+    const pass = envWachtwoord(id);
+    if (!pass) return;
+    try {
+      await metPostbus(GEDEELD[id], pass, async (client) => {
+        const st = await client.status("INBOX", { unseen: true });
+        uit[id] = st.unseen || 0;
+      });
+    } catch { uit[id] = 0; }
+  }));
+  return { tellers: uit };
+}
+
+export async function verplaats(sessie, van, uid, naar) {
+  if (!PERSOONLIJK.has(van) || !PERSOONLIJK.has(naar) || van === naar) {
+    return { fout: "Alleen je eigen post verplaats je, tussen Postvak IN, Concepten, Verzonden, Archief en Prullenbak.", status: 400 };
+  }
+  const nummer = Number(String(uid).split(":").pop());
+  if (!Number.isInteger(nummer) || nummer < 1) return { fout: "Onbekend bericht.", status: 400 };
+  return metPostbus(sessie.email, sessie.pass, async (client) => {
+    const bron = await padVan(client, van);
+    const doelpad = await zorgPad(client, naar);
+    const lock = await client.getMailboxLock(bron);
+    try {
+      const weg = await client.messageMove(String(nummer), doelpad, { uid: true });
+      if (!weg) return { fout: "Verplaatsen lukte niet.", status: 502 };
+      return { ok: true };
+    } finally { lock.release(); }
+  });
+}
+
+export async function bewaarConcept(sessie, invoer) {
+  let aan = String(invoer.aan || "").trim().toLowerCase();
+  if (aan && !aan.includes("@")) aan = `${aan}@boaportaal.nl`;
+  if (aan && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(aan)) return { fout: "Dat adres klopt niet.", status: 400 };
+  const onderwerp = schoneRegel(invoer.onderwerp, 180) || "(concept)";
+  const tekst = String(invoer.tekst || "").replace(/\r/g, "").slice(0, 20000);
+  const local = sessie.email.split("@")[0];
+  const naam = toonnaam(invoer, local);
+  const mail = {
+    from: { name: naam, address: sessie.email },
+    to: aan || sessie.email,
+    subject: onderwerp,
+    text: tekst,
+  };
+  const ruw = await new Promise((resolve, reject) => {
+    const stream = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: "windows" });
+    stream.sendMail(mail, (err, info) => (err ? reject(err) : resolve(info.message)));
+  });
+  await metPostbus(sessie.email, sessie.pass, async (client) => {
+    const pad = await zorgPad(client, "concepten");
+    await client.append(pad, ruw, ["\\Draft"]);
+  });
   return { ok: true };
 }
 

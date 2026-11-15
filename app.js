@@ -21,6 +21,8 @@ let berichten = [];
 let wacht = null;
 let tips = [];
 let tipTimer = null;
+let tellers = {};
+let zoek = "";
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) => {
@@ -59,11 +61,28 @@ async function api(pad, opt = {}) {
   return data;
 }
 
-function mappen() {
-  const basis = [["in", "Postvak IN"], ["support", "Support"], ["info", "Info"]];
-  if (gebruiker.account) basis.push(["account", "Account"]);
-  basis.push(["verzonden", "Verzonden"]);
-  return basis;
+function mappenHtml() {
+  const knop = (id, label) => {
+    const n = Number(tellers[id] || 0);
+    const badge = n > 0 ? `<span class="map-teller">${n > 99 ? "99+" : n}</span>` : "";
+    return `<button class="mapknop ${map === id ? "aan" : ""}" data-map="${id}" type="button"><span>${label}</span>${badge}</button>`;
+  };
+  const gedeeld = [knop("support", "Support"), knop("info", "Info")];
+  if (gebruiker.account) gedeeld.push(knop("account", "Account"));
+  return `<p class="mapgroep-titel">Persoonlijk</p>
+    ${knop("in", "Postvak IN")}
+    <div class="submappen">
+      ${knop("concepten", "Concepten")}
+      ${knop("verzonden", "Verzonden")}
+      ${knop("archief", "Archief")}
+      ${knop("prullenbak", "Prullenbak")}
+    </div>
+    <p class="mapgroep-titel">Gedeeld</p>
+    ${gedeeld.join("")}`;
+}
+
+function korteNaam(item) {
+  return item.vanKort || String(item.van || "").replace(/<[^>]*>/g, "").trim() || item.van || "";
 }
 
 function toonFoto(index, direct) {
@@ -130,7 +149,11 @@ function huidig() { return berichten.find((b) => b.id === openId) || null; }
 function leegtekst() {
   if (fout) return fout;
   if (laden) return "Bezig met ophalen…";
+  if (zoek.trim()) return "Niets in deze map met die zoekterm. Er worden de laatste 40 berichten doorzocht.";
   if (map === "in") return "Je privépost staat hier.";
+  if (map === "concepten") return "Nog niet verzonden. Open een concept en kies Verder schrijven.";
+  if (map === "archief") return "Bewaarde berichten, uit de drukte.";
+  if (map === "prullenbak") return "Verwijderde berichten. Terugzetten kan nog.";
   if (map === "support" || map === "info") return "Binnenkomende post op dit adres ziet het hele team. Claim een bericht voordat je antwoordt, zodat niet iedereen tegelijk terugmailt.";
   if (map === "account") return "Automatische post van account@ komt bij Joshua binnen. De andere medewerkers zien deze map niet.";
   return "Verzonden berichten, met de handtekening eronder.";
@@ -144,7 +167,16 @@ function berichtHtml(b) {
   if (gedeeld && !geclaimd) actie = `<div class="rij"><button class="primair smal" id="claim" type="button">Claim</button></div>`;
   else if (gedeeld && vanMij) actie = `<p class="meta"><span class="chip ok">Geclaimd door jou</span></p><div class="rij"><button class="primair smal" id="antwoord" type="button">Antwoorden</button><button class="secundair" id="unclaim" type="button">Claim loslaten</button></div>`;
   else if (gedeeld) actie = `<p class="meta"><span class="chip">Geclaimd door ${esc(b.claim.naam)}</span> Alleen die persoon antwoordt.</p>`;
-  else if (map !== "verzonden" && b.vanAdres) actie = `<div class="rij"><button class="primair smal" id="antwoord" type="button">Antwoorden</button></div>`;
+  else if (map !== "verzonden" && map !== "concepten" && map !== "prullenbak" && b.vanAdres) actie = `<div class="rij"><button class="primair smal" id="antwoord" type="button">Antwoorden</button></div>`;
+  const eigen = map === "in" || map === "verzonden" || map === "concepten" || map === "archief" || map === "prullenbak";
+  if (eigen) {
+    const knoppen = [];
+    if (map === "concepten" && b.tekst != null) knoppen.push(`<button class="primair smal" id="verder" type="button">Verder schrijven</button>`);
+    if (map !== "archief") knoppen.push(`<button class="secundair" data-naar="archief" type="button">Archiveren</button>`);
+    if (map !== "prullenbak") knoppen.push(`<button class="secundair" data-naar="prullenbak" type="button">Prullenbak</button>`);
+    if (map === "archief" || map === "prullenbak") knoppen.push(`<button class="secundair" data-naar="in" type="button">Terug naar postvak</button>`);
+    if (knoppen.length) actie += `<div class="rij">${knoppen.join("")}</div>`;
+  }
   const tekst = b.tekst == null ? "Bezig met openen…" : b.tekst;
   const bijlagen = (b.bijlagen || []).map((stuk) => `<li><button class="tekst" type="button" data-bijlage="${stuk.id}">${esc(stuk.naam)} · ${esc(formaat(stuk.grootte))}</button></li>`).join("");
   return `<h2>${esc(b.onderwerp)}</h2>
@@ -223,6 +255,7 @@ function tekenLogin() {
       map = "in";
       openId = null;
       scherm = "post";
+      laadTellers();
       await laad();
     } catch (err) {
       gebruiker = null;
@@ -236,23 +269,27 @@ function tekenLogin() {
 }
 
 function opstelHtml(p) {
-  const bron = scherm === "antwoord" ? huidig() : null;
-  const aan = bron?.vanAdres || "";
-  const onderwerp = bron ? (bron.onderwerp.startsWith("Re:") ? bron.onderwerp : `Re: ${bron.onderwerp}`) : "";
+  const bron = scherm === "antwoord" || scherm === "verder" ? huidig() : null;
+  const aan = scherm === "verder" ? (bron?.aanAdres || bron?.aan || "") : (bron?.vanAdres || "");
+  const onderwerp = !bron ? "" : scherm === "verder" ? bron.onderwerp : (bron.onderwerp.startsWith("Re:") ? bron.onderwerp : `Re: ${bron.onderwerp}`);
+  const tekst = scherm === "verder" ? (bron?.tekst || "") : "";
   return `<form class="opstel" id="opstel">
-    <div class="kop"><h2>${scherm === "antwoord" ? "Antwoorden" : "Nieuw bericht"}</h2><button class="tekst" id="dicht" type="button">Sluiten</button></div>
+    <div class="kop"><h2>${scherm === "antwoord" ? "Antwoorden" : scherm === "verder" ? "Concept" : "Nieuw bericht"}</h2><button class="tekst" id="dicht" type="button">Sluiten</button></div>
     <label class="suggesties">Aan
-      <input name="aan" type="text" required value="${esc(aan)}" placeholder="info" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <input name="aan" type="text" ${scherm === "verder" ? "" : "required"} value="${esc(aan)}" placeholder="info" autocomplete="off" autocapitalize="none" spellcheck="false">
       <div class="lijstje" id="tips" hidden></div>
     </label>
-    <label>Onderwerp<input name="onderwerp" required value="${esc(onderwerp)}"></label>
-    <label>Bericht<textarea name="tekst" required></textarea></label>
+    <label>Onderwerp<input name="onderwerp" ${scherm === "verder" ? "" : "required"} value="${esc(onderwerp)}"></label>
+    <label>Bericht<textarea name="tekst" ${scherm === "verder" ? "" : "required"}>${esc(tekst)}</textarea></label>
     <label>Bijlagen<input name="bijlagen" type="file" multiple></label>
     <p class="sub">Bestanden meesturen mag. Samen maximaal 3,5 MB. Ontvangen bijlagen staan onder het bericht.</p>
-    <p class="sub">De handtekening gaat altijd mee. Die staat vast, als ${esc(toonnaam(p))}.</p>
+    <p class="sub">De handtekening gaat altijd mee bij verzenden. Die staat vast, als ${esc(toonnaam(p))}. Een concept bewaart de tekst zonder handtekening.</p>
     ${handtekeningBlok(toonnaam(p))}
     <p class="fout">${esc(fout)}</p>
-    <button class="primair" type="submit">Verzenden</button>
+    <div class="rij">
+      <button class="primair smal" type="submit">Verzenden</button>
+      <button class="secundair" id="concept" type="button">Bewaar concept</button>
+    </div>
   </form>`;
 }
 
@@ -274,7 +311,8 @@ function instelHtml(p) {
 }
 
 function tekenPost() {
-  const items = berichten;
+  const q = zoek.trim().toLowerCase();
+  const items = q ? berichten.filter((item) => `${item.van || ""} ${item.vanKort || ""} ${item.onderwerp || ""} ${item.aan || ""}`.toLowerCase().includes(q)) : berichten;
   const b = huidig();
   const p = profiel();
   document.getElementById("app").innerHTML = `<div class="app">
@@ -283,18 +321,21 @@ function tekenPost() {
       <strong>Mail</strong>
       <span class="wie">${esc(gebruiker.email)}</span>
       <div class="acties">
-        <button class="secundair" id="nieuw" type="button">Nieuw bericht</button>
+        <button class="primair smal" id="nieuw" type="button">Nieuw bericht</button>
         <button class="secundair" id="naar-hand" type="button">Handtekening</button>
         <button class="tekst" id="uit" type="button">Afmelden</button>
       </div>
     </header>
     ${gebruiker.letop ? `<p class="letop">${esc(gebruiker.letop)}</p>` : ""}
     <div class="werk">
-      <nav class="mappen">${mappen().map(([id, label]) => `<button class="mapknop ${map === id ? "aan" : ""}" data-map="${id}" type="button">${label}</button>`).join("")}</nav>
-      <div class="lijst">${items.length ? items.map((item) => `<button class="item ${item.id === openId ? "aan" : ""}" data-id="${esc(item.id)}" type="button"><strong>${esc(item.van)}</strong><em>${esc(item.onderwerp)}</em><small>${esc(new Date(item.tijd).toLocaleString("nl-NL"))}</small></button>`).join("") : `<p class="leeg" style="padding:16px;">${esc(laden ? "Bezig met ophalen…" : "Geen berichten in deze map.")}</p>`}</div>
+      <nav class="mappen">${mappenHtml()}</nav>
+      <div class="lijst">
+        <div class="zoek"><input id="zoek" type="search" placeholder="Zoek in deze map" value="${esc(zoek)}"></div>
+        ${items.length ? items.map((item) => `<button class="item ${item.id === openId ? "aan" : ""} ${item.gezien ? "" : "ongelezen"}" data-id="${esc(item.id)}" type="button"><strong>${item.gezien ? "" : `<i class="bol"></i>`}${esc(korteNaam(item))}</strong><em>${esc(item.onderwerp)}</em><small>${esc(new Date(item.tijd).toLocaleString("nl-NL"))}</small></button>`).join("") : `<p class="leeg" style="padding:16px;">${esc(laden ? "Bezig met ophalen…" : "Geen berichten in deze map.")}</p>`}
+      </div>
       <article class="lees">${b ? berichtHtml(b) : `<p class="leeg">${esc(leegtekst())}</p>`}</article>
     </div>
-    ${scherm === "nieuw" || scherm === "antwoord" ? opstelHtml(p) : ""}
+    ${scherm === "nieuw" || scherm === "antwoord" || scherm === "verder" ? opstelHtml(p) : ""}
     ${scherm === "hand" ? instelHtml(p) : ""}
   </div>`;
   bind(p);
@@ -305,11 +346,17 @@ function bind(p) {
     map = knoop.dataset.map;
     openId = null;
     scherm = "post";
+    zoek = "";
     fout = "";
     laad();
   }));
   document.querySelectorAll("[data-id]").forEach((knoop) => knoop.addEventListener("click", () => {
     openId = knoop.dataset.id;
+    const item = huidig();
+    if (item && !item.gezien) {
+      item.gezien = true;
+      if (tellers[map] > 0) tellers[map] -= 1;
+    }
     scherm = "post";
     teken();
     vul();
@@ -375,6 +422,37 @@ function bind(p) {
     }
   });
   document.getElementById("antwoord")?.addEventListener("click", () => { fout = ""; scherm = "antwoord"; teken(); });
+  document.getElementById("verder")?.addEventListener("click", () => { fout = ""; scherm = "verder"; teken(); });
+  document.querySelectorAll("[data-naar]").forEach((knoop) => knoop.addEventListener("click", async () => {
+    const naar = knoop.dataset.naar;
+    const id = openId;
+    knoop.disabled = true;
+    try {
+      await api("/api/map", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ van: map, id, naar }),
+      });
+      openId = null;
+      fout = "";
+      await laad();
+      laadTellers();
+    } catch (e) {
+      fout = e.message;
+      teken();
+    }
+  }));
+  const zoekveld = document.getElementById("zoek");
+  zoekveld?.addEventListener("input", () => {
+    zoek = zoekveld.value;
+    const start = zoekveld.selectionStart;
+    teken();
+    const opnieuw = document.getElementById("zoek");
+    if (opnieuw) {
+      opnieuw.focus();
+      opnieuw.setSelectionRange(start, start);
+    }
+  });
   document.querySelectorAll("[data-bijlage]").forEach((knoop) => knoop.addEventListener("click", async () => {
     const uid = String(openId || "").split(":")[1];
     try {
@@ -420,7 +498,9 @@ function bind(p) {
       scherm = "post";
       map = "verzonden";
       openId = null;
+      zoek = "";
       await laad();
+      laadTellers();
     } catch (err) {
       fout = err.message;
       knop.disabled = false;
@@ -448,6 +528,38 @@ function bind(p) {
     }
     scherm = "post";
     teken();
+  });
+  document.getElementById("concept")?.addEventListener("click", async () => {
+    const formulier = document.getElementById("opstel");
+    const f = new FormData(formulier);
+    const knop = document.getElementById("concept");
+    knop.disabled = true;
+    try {
+      await api("/api/map", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          actie: "concept",
+          aan: String(f.get("aan") || ""),
+          onderwerp: String(f.get("onderwerp") || ""),
+          tekst: String(f.get("tekst") || ""),
+          voornaam: profiel().voornaam,
+          achternaam: profiel().achternaam,
+          stijl: profiel().stijl,
+        }),
+      });
+      fout = "";
+      scherm = "post";
+      map = "concepten";
+      openId = null;
+      zoek = "";
+      await laad();
+      laadTellers();
+    } catch (err) {
+      fout = err.message;
+      knop.disabled = false;
+      teken();
+    }
   });
   const aanVeld = document.querySelector("#opstel [name=aan]");
   const tipBox = document.getElementById("tips");
@@ -514,12 +626,20 @@ function tekenTotp() {
       map = "in";
       openId = null;
       scherm = "post";
+      laadTellers();
       await laad();
     } catch (err) {
       fout = err.message;
       teken();
     }
   });
+}
+
+function laadTellers() {
+  api("/api/post?overzicht=1").then((data) => {
+    tellers = data.tellers || {};
+    if (gebruiker && !wacht && scherm === "post") teken();
+  }).catch(() => {});
 }
 
 function teken() {
@@ -532,5 +652,6 @@ toonFoto(foto, true);
 setInterval(() => toonFoto(foto + 1, false), 8000);
 api("/api/ik").then(async (ik) => {
   gebruiker = ik;
+  laadTellers();
   await laad();
 }).catch(() => teken());

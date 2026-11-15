@@ -100,31 +100,61 @@
     .balk {
       display: flex; align-items: center; gap: 12px;
       padding: 10px 14px;
+      backdrop-filter: blur(12px);
     }
     .balk img { width: 32px; height: 32px; }
     .balk .wie { margin-left: auto; font-size: 13px; color: var(--ink-soft); }
     .balk .acties { display: flex; gap: 8px; }
     .werk {
       display: grid;
-      grid-template-columns: 200px 320px 1fr;
+      grid-template-columns: 220px 340px 1fr;
       min-height: 0;
       overflow: hidden;
+      backdrop-filter: blur(12px);
     }
-    .mappen { border-radius: 16px 0 0 16px; border-right: 1px solid var(--line); padding: 12px; background: transparent; }
+    .mappen { border-radius: 16px 0 0 16px; border-right: 1px solid var(--line); padding: 12px; background: transparent; overflow: auto; }
+    .mapgroep-titel {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ink-soft);
+      margin: 14px 10px 6px;
+      font-weight: 600;
+    }
+    .mapgroep-titel:first-child { margin-top: 2px; }
     .mapknop {
       width: 100%; text-align: left;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
       background: transparent; border: 0; border-radius: 10px;
       padding: 9px 10px; margin-bottom: 4px;
     }
     .mapknop.aan { background: var(--ink); color: #fff; }
+    .submappen {
+      padding-left: 12px;
+      margin: 2px 0 6px 12px;
+      border-left: 1px solid var(--line);
+    }
+    .submappen .mapknop { padding: 6px 10px; font-size: 13.5px; color: var(--ink-soft); }
+    .submappen .mapknop.aan { color: #fff; }
+    .map-teller {
+      font-size: 11px; font-weight: 600;
+      background: rgba(15, 37, 55, 0.08); color: var(--ink);
+      border-radius: 99px; padding: 2px 7px;
+    }
+    .mapknop.aan .map-teller { background: rgba(255, 255, 255, 0.22); color: #fff; }
     .lijst { border-right: 1px solid var(--line); overflow: auto; background: transparent; border-radius: 0; }
+    .zoek { position: sticky; top: 0; z-index: 1; padding: 10px; background: rgba(255, 252, 247, 0.94); border-bottom: 1px solid var(--line); }
     .item {
       width: 100%; text-align: left; background: transparent; border: 0;
       border-bottom: 1px solid var(--line); padding: 12px 14px;
     }
     .item.aan { background: var(--amber-soft); }
-    .item strong { display: block; font-size: 14px; }
-    .item em { display: block; font-style: normal; color: var(--ink-soft); font-size: 13px; margin-top: 2px; }
+    .item.ongelezen { box-shadow: inset 3px 0 0 var(--amber); }
+    .item strong, .item em { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item strong { font-size: 14px; font-weight: 400; }
+    .item.ongelezen strong { font-weight: 700; }
+    .bol { display: inline-block; width: 7px; height: 7px; border-radius: 99px; background: var(--amber); margin-right: 6px; vertical-align: middle; }
+    .item em { font-style: normal; color: var(--ink-soft); font-size: 13px; margin-top: 2px; }
     .item small { color: #8a8176; }
     .lees { padding: 22px 26px 28px; overflow: auto; background: transparent; border: 0; }
     .lees h2 { font-family: Georgia, serif; font-weight: 500; font-size: 28px; margin: 0 0 8px; }
@@ -168,10 +198,8 @@
     .keuze button { flex: 1; }
     .keuze button.aan { background: var(--ink); color: #fff; border-color: var(--ink); }
     .fout { color: var(--stop); font-size: 13px; min-height: 1.2em; }
-    .qr { display: block; width: 220px; height: 220px; margin: 8px auto; background: #fff; padding: 8px; }
+    .qr { display: block; width: 180px; height: 180px; margin: 8px auto; background: #fff; padding: 8px; border-radius: 12px; }
     .letop { margin: 0; background: var(--amber-soft); color: var(--amber); border-radius: 12px; padding: 8px 12px; font-size: 13px; }
-
-    .qr { width: 180px; height: 180px; display: block; margin: 8px auto; background: #fff; border-radius: 12px; }
     .suggesties { position: relative; }
     .lijstje { position: absolute; z-index: 6; left: 0; right: 0; top: 100%; background: #fff; border: 1px solid var(--line); border-radius: 10px; max-height: 220px; overflow: auto; box-shadow: var(--shadow); }
     .lijstje button { width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--line); padding: 8px 10px; }
@@ -182,8 +210,11 @@
     .vink input { width: auto; margin-top: 3px; }
     @media (max-width: 900px) {
       .werk { grid-template-columns: 1fr; }
-      .mappen { display: flex; gap: 6px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); border-radius: 16px 16px 0 0; }
-      .mapknop { width: auto; white-space: nowrap; }
+      .mappen { display: flex; gap: 6px; align-items: center; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); border-radius: 16px 16px 0 0; }
+      .mapgroep-titel { margin: 0 4px; flex: 0 0 auto; }
+      .submappen { display: flex; gap: 6px; padding: 0; margin: 0; border: 0; }
+      .submappen .mapknop, .mapknop { width: auto; white-space: nowrap; padding: 9px 10px; font-size: inherit; color: inherit; }
+      .mapknop.aan, .submappen .mapknop.aan { color: #fff; }
       .lijst { max-height: 34vh; border-right: 0; }
       .balk { flex-wrap: wrap; }
       .balk .wie { margin-left: 0; }
