@@ -185,6 +185,7 @@ export function handtekeningHtml(naam) {
           <div style="font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f2537;">BOA Portaal</div>
           <div style="font-family:Georgia,serif;font-style:italic;font-size:14px;color:#3d4c59;padding-top:2px;">Voor BOA's, door BOA's</div>
           <div style="padding-top:4px;font-size:13px;line-height:1.3;"><a href="https://boaportaal.nl" style="color:#0f2537;text-decoration:none;">boaportaal.nl</a></div>
+          <div style="padding-top:2px;font-size:13px;line-height:1.3;"><a href="https://faq.boaportaal.nl" style="color:#0f2537;text-decoration:none;">Veelgestelde vragen</a></div>
         </td>
       </tr></table>
     </td></tr>
@@ -192,7 +193,7 @@ export function handtekeningHtml(naam) {
 }
 
 export function handtekeningTekst(naam) {
-  return `\n\nMet vriendelijke groet,\n\n${schoneRegel(naam, 80)}\n\nBOA Portaal\nVoor BOA's, door BOA's\nhttps://boaportaal.nl\n`;
+  return `\n\nMet vriendelijke groet,\n\n${schoneRegel(naam, 80)}\n\nBOA Portaal\nVoor BOA's, door BOA's\nhttps://boaportaal.nl\nVeelgestelde vragen: https://faq.boaportaal.nl\n`;
 }
 
 async function metPostbus(email, pass, werk) {
