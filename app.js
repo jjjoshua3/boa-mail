@@ -1,12 +1,14 @@
 const FOTOS = [
-  ["achtergronden/dam.jpg", "Dam"],
-  ["achtergronden/fiets.jpg", "Fiets"],
-  ["achtergronden/trio.jpg", "Straat"],
-  ["achtergronden/rug.jpg", "Rug"],
+  ["achtergronden/dam.jpg", "Plein"],
+  ["achtergronden/pad.jpg", "Fietspad"],
   ["achtergronden/vest.jpg", "Vest"],
-  ["achtergronden/steeg.jpg", "Steeg"],
-  ["achtergronden/metro.jpg", "Station"],
+  ["achtergronden/tweetal.jpg", "Tweetal"],
+  ["achtergronden/straat.jpg", "Straat"],
+  ["achtergronden/bos.jpg", "Bos"],
+  ["achtergronden/radio.jpg", "Portofoon"],
   ["achtergronden/portret.jpg", "Portret"],
+  ["achtergronden/groep.jpg", "Groep"],
+  ["achtergronden/douane.jpg", "Bureau"],
 ];
 
 let foto = (Number(localStorage.getItem("boa-mail-foto") || -1) + 1) % FOTOS.length;
