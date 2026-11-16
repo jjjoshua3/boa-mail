@@ -16,9 +16,10 @@ function past(item, q) {
 }
 
 function regel(item) {
-  const letter = String(item.achternaam || "").replace(/^(de|van|der|den|ten|ter|het)\s+/i, "").slice(0, 1).toUpperCase();
-  const naam = item.zoek_naam && item.voornaam
-    ? (letter ? `${item.voornaam} ${letter}.` : item.voornaam)
+  const delen = String(item.achternaam || "").split(/\s+/).filter(Boolean).map((woord) => woord.replace(/[^A-Za-z]/g, "").slice(0, 1).toUpperCase()).filter(Boolean);
+  const voor = item.voornaam ? item.voornaam.slice(0, 1).toUpperCase() + item.voornaam.slice(1) : "";
+  const naam = item.zoek_naam && voor
+    ? (delen.length ? `${voor}, ${delen.join(" ")}.` : voor)
     : item.label;
   return {
     label: naam || item.local,
