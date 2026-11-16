@@ -1,5 +1,5 @@
 import { antwoord, controleerLogin, geldigAdres, ipVan, koekje, leesJson, mailLog, openToken, verzegel } from "./lib.mjs";
-import { bevestigBeheer, startBeheer } from "./beheer.mjs";
+import { bevestigBeheer, mailMoetWijzigen, mailWachtwoordGezet, startBeheer } from "./beheer.mjs";
 
 const DIENST = new Set(["support", "info"]);
 
@@ -34,6 +34,28 @@ export async function handler(event) {
   try {
     const body = leesJson(event);
     const ip = ipVan(event);
+    if (body.wijzig) {
+      const open = openToken(body.ticket);
+      if (!open?.wijzig) return antwoord(401, { fout: "Kies het nieuwe wachtwoord opnieuw. De tijd is om." });
+      const nieuw = String(body.nieuw || "");
+      const nog = String(body.nog || "");
+      const local = open.email.split("@")[0];
+      if (nieuw.length < 12 || nieuw.length > 200) return antwoord(400, { fout: "Kies een wachtwoord van minstens 12 tekens." });
+      if (nieuw !== nog) return antwoord(400, { fout: "De twee wachtwoorden zijn niet gelijk." });
+      if (nieuw === open.pass) return antwoord(400, { fout: "Kies een ander wachtwoord dan het tijdelijke." });
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+      const gezet = await fetch("https://systeem.boaportaal.nl/.netlify/functions/postbus", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+        body: JSON.stringify({ local, password: nieuw }),
+      });
+      const data = await gezet.json().catch(() => ({}));
+      if (!gezet.ok || !data.ok) return antwoord(500, { fout: data.fout || "Het mailwachtwoord is niet gewijzigd." });
+      await mailWachtwoordGezet(local);
+      const token = verzegel({ email: open.email, pass: nieuw, exp: Date.now() + 12 * 60 * 60 * 1000 });
+      await mailLog("MAIL_LOGIN", local, "mailwachtwoord gewijzigd", "geslaagd", ip);
+      return antwoord(200, profiel(open.email), { "set-cookie": koekje(token, 12 * 60 * 60) });
+    }
     if (body.ticket) {
       const open = openToken(body.ticket);
       if (!open?.factorId) return antwoord(401, { fout: "De tweede stap is verlopen. Log opnieuw in." });
@@ -64,6 +86,10 @@ export async function handler(event) {
       await mailLog("MAIL_LOGIN", local, "wachtwoord onjuist", "mislukt", ip);
       await slaIp(ip, local);
       return antwoord(401, { fout: "Deze loginnaam en dit wachtwoord horen niet bij een postbus." });
+    }
+    if (await mailMoetWijzigen(local)) {
+      const ticket = verzegel({ email: adres, pass: geheim, exp: Date.now() + 10 * 60 * 1000, ticket: true, wijzig: true });
+      return antwoord(200, { stap: "wachtwoord", ticket, local });
     }
     let beheer = { letop: "" };
     try {

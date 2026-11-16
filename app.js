@@ -658,9 +658,49 @@ function laadTellers() {
 }
 
 function teken() {
-  if (wacht) tekenTotp();
+  if (wacht?.stap === "wachtwoord") tekenWijzig();
+  else if (wacht) tekenTotp();
   else if (!gebruiker) tekenLogin();
   else tekenPost();
+}
+
+function tekenWijzig() {
+  document.getElementById("app").innerHTML = `<div class="poort"><form class="poort-kaart" id="wijzig">
+    <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
+    <h1>Nieuw mailwachtwoord</h1>
+    <p class="sub">Dit wachtwoord geldt alleen voor mail.boaportaal.nl. Het wachtwoord van boaportaal.nl blijft hetzelfde.</p>
+    <label>Nieuw wachtwoord<input name="nieuw" type="password" autocomplete="new-password" required minlength="12"></label>
+    <label>Herhaal wachtwoord<input name="nog" type="password" autocomplete="new-password" required minlength="12"></label>
+    <p class="fout">${esc(fout)}</p>
+    <button class="primair" type="submit">Wachtwoord zetten</button>
+  </form></div>`;
+  document.getElementById("wijzig").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const formulier = new FormData(e.target);
+    fout = "";
+    try {
+      gebruiker = await api("/api/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          wijzig: true,
+          ticket: wacht.ticket,
+          nieuw: String(formulier.get("nieuw") || ""),
+          nog: String(formulier.get("nog") || ""),
+        }),
+      });
+      gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
+      wacht = null;
+      map = "in";
+      openId = null;
+      scherm = "post";
+      laadTellers();
+      await laad();
+    } catch (err) {
+      fout = err.message;
+      teken();
+    }
+  });
 }
 
 toonFoto(foto, true);

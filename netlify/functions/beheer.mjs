@@ -44,6 +44,34 @@ async function vindGebruiker(local, adres) {
   return { email: een.email };
 }
 
+export async function mailMoetWijzigen(local) {
+  const admin = dienst();
+  if (!admin) return false;
+  const users = await alleGebruikers();
+  const naam = String(local || "").trim().toLowerCase();
+  const user = users.find((item) => {
+    const meta = item.user_metadata || {};
+    const mail = String(item.email || "").toLowerCase();
+    return String(meta.mail_local || "").toLowerCase() === naam || String(meta.client_id || "").toLowerCase() === naam || mail.split("@")[0] === naam;
+  });
+  return Boolean(user?.user_metadata?.mail_moet_wijzigen);
+}
+
+export async function mailWachtwoordGezet(local) {
+  const admin = dienst();
+  if (!admin) return;
+  const users = await alleGebruikers();
+  const naam = String(local || "").trim().toLowerCase();
+  const user = users.find((item) => {
+    const meta = item.user_metadata || {};
+    const mail = String(item.email || "").toLowerCase();
+    return String(meta.mail_local || "").toLowerCase() === naam || String(meta.client_id || "").toLowerCase() === naam || mail.split("@")[0] === naam;
+  });
+  if (!user) return;
+  const meta = { ...(user.user_metadata || {}), mail_moet_wijzigen: false };
+  await admin.auth.admin.updateUserById(user.id, { user_metadata: meta });
+}
+
 export async function startBeheer(adres, pass) {
   if (!dienst() || !gebruikerClient()) return { letop: "" };
   const local = adres.split("@")[0];
