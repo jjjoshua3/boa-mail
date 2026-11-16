@@ -16,8 +16,9 @@ function past(item, q) {
 }
 
 function regel(item) {
-  const naam = item.zoek_naam && (item.voornaam || item.achternaam)
-    ? `${item.voornaam || ""} ${item.achternaam || ""}`.trim()
+  const letter = String(item.achternaam || "").replace(/^(de|van|der|den|ten|ter|het)\s+/i, "").slice(0, 1).toUpperCase();
+  const naam = item.zoek_naam && item.voornaam
+    ? (letter ? `${item.voornaam} ${letter}.` : item.voornaam)
     : item.label;
   return {
     label: naam || item.local,
