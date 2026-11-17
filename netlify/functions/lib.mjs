@@ -5,7 +5,7 @@ import { simpleParser } from "mailparser";
 import nodemailer from "nodemailer";
 
 const DOMEIN = "boaportaal.nl";
-const DIENST = new Set(["support", "info", "account"]);
+const DIENST = new Set(["support", "info", "account", "ambassadeur"]);
 const MERK = "https://boaportaal.nl/boa-mark.png";
 const KOEKJE = "boa_mail";
 
@@ -13,6 +13,8 @@ const GEDEELD = {
   support: "support@boaportaal.nl",
   info: "info@boaportaal.nl",
   account: "account@boaportaal.nl",
+  ambassadeur: "ambassadeur@boaportaal.nl",
+  ambsupport: "support@ambassadeur.boaportaal.nl",
 };
 
 export function antwoord(status, data, extra = {}) {
@@ -81,7 +83,7 @@ export function koekje(waarde, maxAge) {
 }
 
 export function geldigAdres(email) {
-  return /^[a-z0-9][a-z0-9._-]{0,62}@boaportaal\.nl$/.test(String(email || ""));
+  return /^[a-z0-9][a-z0-9._-]{0,62}@(?:boaportaal\.nl|ambassadeur\.boaportaal\.nl)$/.test(String(email || ""));
 }
 
 export function schoneRegel(waarde, max = 120) {
@@ -216,12 +218,18 @@ export async function controleerLogin(email, pass) {
 }
 
 function doel(map, sessie) {
+  if (sessie.org) {
+    if (map !== "org") return { geweigerd: true };
+    if (!sessie.orgPass) return { ontbreekt: true };
+    return { email: `${sessie.org}@ambassadeur.boaportaal.nl`, pass: sessie.orgPass, mapnaam: "INBOX" };
+  }
   if (PERSOONLIJK.has(map)) return { email: sessie.email, pass: sessie.pass, persoonlijk: true, map };
   if (!GEDEELD[map]) return null;
   if (map === "account") {
     const local = sessie.email.split("@")[0];
     if (local !== "joshua.bosma" && local !== "beheerder") return { geweigerd: true };
   }
+  if ((map === "ambassadeur" || map === "ambsupport") && !String(sessie.email).endsWith("@boaportaal.nl")) return { geweigerd: true };
   const pass = envWachtwoord(map);
   if (!pass) return { ontbreekt: true };
   return { email: GEDEELD[map], pass, mapnaam: "INBOX" };
@@ -562,7 +570,9 @@ export async function verstuur(sessie, invoer) {
       contentType: String(stuk.type || "application/octet-stream").slice(0, 120),
     });
   }
-  const local = sessie.email.split("@")[0];
+  const local = sessie.org || sessie.email.split("@")[0];
+  const vanAdres = sessie.org ? `${sessie.org}@ambassadeur.boaportaal.nl` : sessie.email;
+  const vanPass = sessie.org ? sessie.orgPass : sessie.pass;
   const naam = toonnaam(invoer, local);
   const bronMap = String(invoer.bronMap || "");
   if ((bronMap === "support" || bronMap === "info") && invoer.bronId) {
@@ -572,7 +582,7 @@ export async function verstuur(sessie, invoer) {
     if (!huidig.claim?.vanMij) return { fout: "Claim het bericht eerst. Daarna kun jij als enige antwoorden.", status: 403 };
   }
   const mail = {
-    from: { name: naam, address: sessie.email },
+    from: { name: naam, address: vanAdres },
     to: aan,
     subject: onderwerp,
     text: `${tekst.trim()}${handtekeningTekst(naam)}`,
@@ -584,7 +594,7 @@ export async function verstuur(sessie, invoer) {
     host: "smtp.purelymail.com",
     port: 465,
     secure: true,
-    auth: { user: sessie.email, pass: sessie.pass },
+    auth: { user: vanAdres, pass: vanPass },
   });
   await smtp.sendMail(mail);
   try {
@@ -592,7 +602,7 @@ export async function verstuur(sessie, invoer) {
       const stream = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: "windows" });
       stream.sendMail(mail, (err, info) => (err ? reject(err) : resolve(info.message)));
     });
-    await metPostbus(sessie.email, sessie.pass, async (client) => {
+    await metPostbus(vanAdres, vanPass, async (client) => {
       await client.append("Sent", ruw, ["\\Seen"]);
     });
   } catch {
@@ -604,6 +614,18 @@ export async function verstuur(sessie, invoer) {
 }
 
 export async function tellers(sessie) {
+  if (sessie.org) {
+    const uit = { org: 0 };
+    if (sessie.orgPass) {
+      try {
+        await metPostbus(`${sessie.org}@ambassadeur.boaportaal.nl`, sessie.orgPass, async (client) => {
+          const st = await client.status("INBOX", { unseen: true });
+          uit.org = st.unseen || 0;
+        });
+      } catch { uit.org = 0; }
+    }
+    return { tellers: uit };
+  }
   const uit = {};
   const local = sessie.email.split("@")[0];
   try {
@@ -619,6 +641,7 @@ export async function tellers(sessie) {
   } catch { /* tellers blijven leeg */ }
   const gedeeld = ["support", "info"];
   if (local === "joshua.bosma" || local === "beheerder") gedeeld.push("account");
+  if (sessie.email.endsWith("@boaportaal.nl")) gedeeld.push("ambassadeur", "ambsupport");
   await Promise.all(gedeeld.map(async (id) => {
     const pass = envWachtwoord(id);
     if (!pass) return;

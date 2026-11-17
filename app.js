@@ -69,8 +69,15 @@ function mappenHtml() {
     const badge = n > 0 ? `<span class="map-teller">${n > 99 ? "99+" : n}</span>` : "";
     return `<button class="mapknop ${map === id ? "aan" : ""}" data-map="${id}" type="button"><span>${label}</span>${badge}</button>`;
   };
+  if (gebruiker?.org) {
+    return `<p class="mapgroep-titel">${esc(gebruiker.orgNaam || "Organisatie")}</p>${knop("org", gebruiker.orgNaam || "Organisatie")}`;
+  }
   const gedeeld = [knop("support", "Support"), knop("info", "Info")];
   if (gebruiker.account) gedeeld.push(knop("account", "Account"));
+  if (gebruiker.staf) {
+    gedeeld.push(knop("ambassadeur", "Ambassadeur"));
+    gedeeld.push(knop("ambsupport", "Ambassadeur | Support"));
+  }
   return `<p class="mapgroep-titel">Persoonlijk</p>
     ${knop("in", "Postvak IN")}
     <div class="submappen">
@@ -245,7 +252,7 @@ function tekenLogin() {
     <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
     <h1>Mail</h1>
     <p class="sub">Je eigen postbus, op mail.boaportaal.nl.</p>
-    <label>Loginnaam<input name="email" type="text" autocomplete="username" required placeholder="voornaam.achternaam" autocapitalize="none" spellcheck="false"></label>
+    <label>Loginnaam<input name="email" type="text" autocomplete="username" required placeholder="voornaam.achternaam of volledig adres" autocapitalize="none" spellcheck="false"></label>
     <label>Wachtwoord<input name="wachtwoord" type="password" autocomplete="current-password" required></label>
     <p class="fout">${esc(fout)}</p>
     <button class="primair" type="submit">Inloggen</button>
@@ -269,6 +276,7 @@ function tekenLogin() {
       gebruiker.letop = data.letop || "";
       wacht = null;
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
+      if (gebruiker.org) map = "org";
       map = "in";
       openId = null;
       scherm = "post";
@@ -639,8 +647,9 @@ function tekenTotp() {
         body: JSON.stringify({ ticket: wacht.ticket, code }),
       });
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
+      if (gebruiker.org) map = "org";
       wacht = null;
-      map = "in";
+      if (!gebruiker.org) map = "in";
       openId = null;
       scherm = "post";
       laadTellers();
@@ -692,8 +701,9 @@ function tekenWijzig() {
         }),
       });
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
+      if (gebruiker.org) map = "org";
       wacht = null;
-      map = "in";
+      if (!gebruiker.org) map = "in";
       openId = null;
       scherm = "post";
       laadTellers();
@@ -709,6 +719,7 @@ toonFoto(foto, true);
 setInterval(() => toonFoto(foto + 1, false), 8000);
 api("/api/ik").then(async (ik) => {
   gebruiker = ik;
+  if (gebruiker?.org) map = "org";
   laadTellers();
   await laad();
 }).catch(() => teken());
