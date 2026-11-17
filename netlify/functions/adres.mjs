@@ -10,21 +10,16 @@ const VAST = [
 
 function past(item, q) {
   if (!q) return false;
-  const velden = [item.local, item.label];
-  if (item.zoek_naam) velden.push(item.voornaam, item.achternaam, `${item.voornaam || ""} ${item.achternaam || ""}`.trim());
+  const velden = [item.local, item.label, item.voornaam, item.achternaam, `${item.voornaam || ""} ${item.achternaam || ""}`.trim()];
   return velden.some((veld) => String(veld || "").toLowerCase().includes(q));
 }
 
 function regel(item) {
-  const delen = String(item.achternaam || "").split(/\s+/).filter(Boolean).map((woord) => woord.replace(/[^A-Za-z]/g, "").slice(0, 1).toUpperCase()).filter(Boolean);
-  const voor = item.voornaam ? item.voornaam.slice(0, 1).toUpperCase() + item.voornaam.slice(1) : "";
-  const naam = item.zoek_naam && voor
-    ? (delen.length ? `${voor}, ${delen.join(" ")}.` : voor)
-    : item.label;
+  const naam = [item.voornaam, item.achternaam].filter(Boolean).map((deel) => deel.slice(0, 1).toUpperCase() + deel.slice(1)).join(" ");
   return {
-    label: naam || item.local,
+    label: naam || item.label || item.local,
     adres: `${item.local}@boaportaal.nl`,
-    toelichting: item.toelichting || (item.zoek_naam ? "Gevonden op naam" : "Client-ID"),
+    toelichting: item.toelichting || "Medewerker",
   };
 }
 

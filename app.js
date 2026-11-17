@@ -245,7 +245,7 @@ function tekenLogin() {
     <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
     <h1>Mail</h1>
     <p class="sub">Je eigen postbus, op mail.boaportaal.nl.</p>
-    <label>Loginnaam<input name="email" type="text" autocomplete="username" required placeholder="loginnaam" autocapitalize="none" spellcheck="false"></label>
+    <label>Loginnaam<input name="email" type="text" autocomplete="username" required placeholder="voornaam.achternaam" autocapitalize="none" spellcheck="false"></label>
     <label>Wachtwoord<input name="wachtwoord" type="password" autocomplete="current-password" required></label>
     <p class="fout">${esc(fout)}</p>
     <button class="primair" type="submit">Inloggen</button>
@@ -316,7 +316,7 @@ function instelHtml(p) {
     <p class="sub">Elke mail krijgt dezelfde handtekening. Je kiest alleen hoe je naam er staat.</p>
     <label>Voornaam<input name="voornaam" required value="${esc(p.voornaam)}"></label>
     <label>Achternaam<input name="achternaam" value="${esc(p.achternaam)}"></label>
-    <label class="vink"><input type="checkbox" name="zoek_naam" ${p.zoek_naam ? "checked" : ""}> Collega's mogen mij ook vinden op voor- en achternaam. Het adres blijft mijn Client-ID.</label>
+    <p class="sub">Collega's vinden je op je voornaam en achternaam. Je adres is voornaam.achternaam@boaportaal.nl.</p>
     <div class="keuze">
       <button class="secundair ${p.stijl !== "volledig" ? "aan" : ""}" type="button" data-stijl="voornaam">Alleen voornaam</button>
       <button class="secundair ${p.stijl === "volledig" ? "aan" : ""}" type="button" data-stijl="volledig">Voornaam en achternaam</button>
@@ -531,7 +531,7 @@ function bind(p) {
       voornaam: String(f.get("voornaam") || "").trim(),
       achternaam: String(f.get("achternaam") || "").trim(),
       stijl: String(f.get("stijl") || "voornaam"),
-      zoek_naam: Boolean(f.get("zoek_naam")),
+      zoek_naam: true,
     };
     localStorage.setItem(sleutel(), JSON.stringify(vers));
     try {
