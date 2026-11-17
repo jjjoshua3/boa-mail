@@ -22,10 +22,50 @@ async function alleGebruikers() {
   return lijst;
 }
 
+const HERNOEM = {
+  "bp-0164-rw": { local: "jurensly.nurse", voornaam: "Jurensly", achternaam: "Nurse", client_id: "BP-0164-RW" },
+};
+
+async function schrijfPostbus(admin, user, doel, oud) {
+  const meta = { ...(user.user_metadata || {}), mail_local: doel.local, voornaam: doel.voornaam, achternaam: doel.achternaam };
+  await admin.auth.admin.updateUserById(user.id, { user_metadata: meta });
+  await admin.from("boa_mail_adres").upsert({
+    local: doel.local,
+    voornaam: doel.voornaam,
+    achternaam: doel.achternaam,
+    zoek_naam: true,
+    bijgewerkt: new Date().toISOString(),
+  });
+  if (oud && oud !== doel.local) {
+    const { data: totp } = await admin.from("boa_mail_totp").select("geheim, bevestigd").eq("local", oud).maybeSingle();
+    if (totp?.geheim) {
+      await admin.from("boa_mail_totp").upsert({
+        local: doel.local,
+        geheim: totp.geheim,
+        bevestigd: Boolean(totp.bevestigd),
+        bijgewerkt: new Date().toISOString(),
+      });
+    }
+  }
+  user.user_metadata = meta;
+}
+
+async function pasBekendePostbus(admin, users) {
+  const { data: rij } = await admin.from("boa_medewerker").select("user_id").eq("client_id", "BP-0164-RW").maybeSingle();
+  for (const user of users) {
+    const meta = user.user_metadata || {};
+    const cid = String(meta.client_id || "").toUpperCase();
+    const lokaal = String(meta.mail_local || "").toLowerCase();
+    const vanDeze = rij?.user_id === user.id || cid === "BP-0164-RW" || lokaal === "bp-0164-rw";
+    if (!vanDeze || lokaal === "jurensly.nurse") continue;
+    await schrijfPostbus(admin, user, HERNOEM["bp-0164-rw"], lokaal || "bp-0164-rw");
+  }
+}
 async function vindGebruiker(local, adres) {
   const admin = dienst();
   if (!admin) return null;
   const users = await alleGebruikers();
+  await pasBekendePostbus(admin, users);
   const norm = (waarde) => String(waarde || "").trim().toLowerCase();
   const direct = users.find((user) => {
     const mail = norm(user.email);
