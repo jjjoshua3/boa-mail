@@ -51,6 +51,45 @@ async function orgVan(email) {
   return { slug: org[0].slug, naam: org[0].naam, pass: org[0].mail_geheim || "", voornaam: beheer[0].voornaam || "", achternaam: beheer[0].achternaam || "" };
 }
 
+async function herstelAmbassadeur(adres, geheim) {
+  if (!String(adres).endsWith("@ambassadeur.boaportaal.nl") || geheim.length < 12) return false;
+  const local = adres.split("@")[0];
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const url = process.env.SUPABASE_URL || "";
+  if (!key || !url) return { fout: "De mailserver mist de koppeling met het accountsysteem." };
+  const kop = { apikey: key, authorization: `Bearer ${key}` };
+  const beheer = await fetch(`${url}/rest/v1/boa_ambassadeur?mail_local=eq.${encodeURIComponent(local)}&actief=eq.true&select=email`, { headers: kop }).then((r) => r.json()).catch(() => []);
+  const email = String(beheer?.[0]?.email || "").trim().toLowerCase();
+  if (!email) return false;
+  const login = await fetch(`${url}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { apikey: "sb_publishable_x8nU8ype6b1KOL6K8lS2Iw_DDjz4Olr", "content-type": "application/json" },
+    body: JSON.stringify({ email, password: geheim }),
+  });
+  if (!login.ok) return false;
+  const gezet = await fetch("https://systeem.boaportaal.nl/.netlify/functions/postbus", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    body: JSON.stringify({ local, password: geheim, domain: "ambassadeur.boaportaal.nl" }),
+  });
+  const data = await gezet.json().catch(() => ({}));
+  if (!gezet.ok || !data.ok) return { fout: data.fout || "De postbus is niet aangemaakt. Het domein ambassadeur.boaportaal.nl moet bij de mailserver staan." };
+  const org = await orgVan(adres);
+  if (org?.slug && org.pass) {
+    await fetch("https://systeem.boaportaal.nl/.netlify/functions/postbus", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({ local: org.slug, password: org.pass, domain: "ambassadeur.boaportaal.nl" }),
+    }).catch(() => null);
+  }
+  try {
+    await controleerLogin(adres, geheim);
+    return true;
+  } catch {
+    return { fout: "De postbus is aangemaakt, maar inloggen lukt nog niet. Probeer het over een minuut opnieuw." };
+  }
+}
+
 export async function handler(event) {
   if (event.httpMethod !== "POST") return antwoord(405, { fout: "Niet toegestaan." });
   try {
@@ -107,9 +146,13 @@ export async function handler(event) {
     try {
       await controleerLogin(adres, geheim);
     } catch {
-      await mailLog("MAIL_LOGIN", local, "wachtwoord onjuist", "mislukt", ip);
-      await slaIp(ip, local);
-      return antwoord(401, { fout: "Deze loginnaam en dit wachtwoord horen niet bij een postbus." });
+      const herstel = await herstelAmbassadeur(adres, geheim);
+      if (herstel !== true) {
+        await mailLog("MAIL_LOGIN", local, "wachtwoord onjuist", "mislukt", ip);
+        await slaIp(ip, local);
+        const fout = herstel?.fout || "Deze postbus bestaat niet, of het wachtwoord klopt niet.";
+        return antwoord(401, { fout });
+      }
     }
     const org = await orgVan(adres);
     if (org?.weiger) return antwoord(403, { fout: "Dit is de organisatiebus. Log in met uw volledige adres: voornaam.achternaam@ambassadeur.boaportaal.nl." });

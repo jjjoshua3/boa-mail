@@ -17,7 +17,7 @@ let gebruiker = null;
 let map = "in";
 let openId = null;
 let scherm = "post";
-let fout = "";
+let bezig = false;
 let laden = false;
 let berichten = [];
 let wacht = null;
@@ -266,14 +266,16 @@ function tekenLogin() {
     <label>Loginnaam<input name="email" type="text" autocomplete="username" required placeholder="voornaam.achternaam of volledig adres" autocapitalize="none" spellcheck="false"></label>
     <label>Wachtwoord<input name="wachtwoord" type="password" autocomplete="current-password" required></label>
     <p class="fout">${esc(fout)}</p>
-    <button class="primair" type="submit">Inloggen</button>
+    <button class="primair" type="submit" ${bezig ? "disabled" : ""}>${bezig ? "Bezig met veilig inloggen…" : "Inloggen"}</button>
     ${stippen()}
   </form></div>`;
   document.getElementById("inlog").addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (bezig) return;
     const formulier = new FormData(e.target);
     const email = String(formulier.get("email") || "").trim().toLowerCase();
     const wachtwoord = String(formulier.get("wachtwoord") || "");
+    bezig = true;
     fout = "";
     teken();
     try {
@@ -282,6 +284,7 @@ function tekenLogin() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, wachtwoord }),
       });
+      bezig = false;
       if (data.stap) { wacht = data; fout = ""; teken(); return; }
       gebruiker = data;
       gebruiker.letop = data.letop || "";
@@ -295,6 +298,7 @@ function tekenLogin() {
       await laad();
     } catch (err) {
       gebruiker = null;
+      bezig = false;
       fout = err.message;
       teken();
     }
