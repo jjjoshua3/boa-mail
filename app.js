@@ -18,6 +18,7 @@ let map = "in";
 let openId = null;
 let scherm = "post";
 let bezig = false;
+let fout = "";
 let laden = false;
 let berichten = [];
 let wacht = null;
