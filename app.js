@@ -17,6 +17,7 @@ let gebruiker = null;
 let map = "in";
 let openId = null;
 let scherm = "post";
+let loginNaam = "";
 let bezig = false;
 let fout = "";
 let laden = false;
@@ -263,8 +264,8 @@ function tekenLogin() {
   document.getElementById("app").innerHTML = `<div class="poort"><form class="poort-kaart" id="inlog">
     <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
     <h1>Mail</h1>
-    <p class="sub">Je eigen postbus, op mail.boaportaal.nl.</p>
-    <label>Loginnaam<input name="email" type="text" autocomplete="username" required placeholder="voornaam.achternaam of volledig adres" autocapitalize="none" spellcheck="false"></label>
+    <p class="sub">Medewerker: voornaam.achternaam. Ambassadeur: het volledige adres, zoals joshua.bosma@ambassadeur.boaportaal.nl.</p>
+    <label>Loginnaam<input name="email" type="text" autocomplete="username" required value="${esc(loginNaam)}" placeholder="voornaam.achternaam of volledig adres" autocapitalize="none" spellcheck="false"></label>
     <label>Wachtwoord<input name="wachtwoord" type="password" autocomplete="current-password" required></label>
     <p class="fout">${esc(fout)}</p>
     <button class="primair" type="submit" ${bezig ? "disabled" : ""}>${bezig ? "Bezig met veilig inloggen…" : "Inloggen"}</button>
@@ -275,6 +276,7 @@ function tekenLogin() {
     if (bezig) return;
     const formulier = new FormData(e.target);
     const email = String(formulier.get("email") || "").trim().toLowerCase();
+    loginNaam = email;
     const wachtwoord = String(formulier.get("wachtwoord") || "");
     bezig = true;
     fout = "";

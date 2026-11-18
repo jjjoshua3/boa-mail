@@ -223,7 +223,12 @@ async function metPostbus(email, pass, werk) {
 }
 
 export async function controleerLogin(email, pass) {
-  await metPostbus(email, pass, async () => true);
+  try {
+    await metPostbus(email, pass, async () => true);
+  } catch (e) {
+    const reden = e?.authenticationFailed ? "De mailserver weigert dit wachtwoord." : (e?.message || "De mailserver gaf geen antwoord.");
+    throw new Error(String(reden).slice(0, 180));
+  }
 }
 
 function doel(map, sessie) {

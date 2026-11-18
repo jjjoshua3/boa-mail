@@ -70,7 +70,7 @@ async function herstelAmbassadeur(adres, geheim) {
   const gezet = await fetch("https://systeem.boaportaal.nl/.netlify/functions/postbus", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-    body: JSON.stringify({ local, password: geheim, domain: "ambassadeur.boaportaal.nl" }),
+    body: JSON.stringify({ local, password: geheim, domain: "ambassadeur.boaportaal.nl", opnieuw: true }),
   });
   const data = await gezet.json().catch(() => ({}));
   if (!gezet.ok || !data.ok) return { fout: data.fout || "De postbus is niet aangemaakt. Het domein ambassadeur.boaportaal.nl moet bij de mailserver staan." };
@@ -85,8 +85,8 @@ async function herstelAmbassadeur(adres, geheim) {
   try {
     await controleerLogin(adres, geheim);
     return true;
-  } catch {
-    return { fout: "De postbus is aangemaakt, maar inloggen lukt nog niet. Probeer het over een minuut opnieuw." };
+  } catch (e) {
+    return { fout: `De postbus ${adres} staat, maar de mailserver laat u er niet in. ${e?.message || "Probeer het zo opnieuw."}` };
   }
 }
 
@@ -150,7 +150,11 @@ export async function handler(event) {
       if (herstel !== true) {
         await mailLog("MAIL_LOGIN", local, "wachtwoord onjuist", "mislukt", ip);
         await slaIp(ip, local);
-        const fout = herstel?.fout || "Deze postbus bestaat niet, of het wachtwoord klopt niet.";
+        let fout = herstel?.fout || "Deze postbus bestaat niet, of het wachtwoord klopt niet.";
+        if (herstel === false && adres.endsWith("@boaportaal.nl")) {
+          const org = await orgVan(`${local}@ambassadeur.boaportaal.nl`);
+          if (org?.slug) fout = `Dit is de medewerkerspostbus. Voor uw organisatie logt u in met ${local}@ambassadeur.boaportaal.nl.`;
+        }
         return antwoord(401, { fout });
       }
     }
