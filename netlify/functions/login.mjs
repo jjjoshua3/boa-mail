@@ -51,6 +51,15 @@ async function orgVan(email) {
   return { slug: org[0].slug, naam: org[0].naam, pass: org[0].mail_geheim || "", voornaam: beheer[0].voornaam || "", achternaam: beheer[0].achternaam || "" };
 }
 
+function mailFout(tekst) {
+  const ruw = String(tekst || "");
+  const dagen = ruw.match(/Current crack time:\s*(\d+)\s*days/i);
+  if (/30 days to crack|crack time/i.test(ruw)) {
+    return `Het wachtwoord is te makkelijk voor de mailserver. Die eist minstens 30 dagen kraaktijd. Dit wachtwoord zit op ${dagen?.[1] || "0"} dagen. Kies een lange zin van minstens vier willekeurige woorden.`;
+  }
+  return ruw;
+}
+
 async function herstelAmbassadeur(adres, geheim) {
   if (!String(adres).endsWith("@ambassadeur.boaportaal.nl") || geheim.length < 12) return false;
   const local = adres.split("@")[0];
@@ -70,10 +79,10 @@ async function herstelAmbassadeur(adres, geheim) {
   const gezet = await fetch("https://systeem.boaportaal.nl/.netlify/functions/postbus", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-    body: JSON.stringify({ local, password: geheim, domain: "ambassadeur.boaportaal.nl", opnieuw: true }),
+    body: JSON.stringify({ local, password: geheim, domain: "ambassadeur.boaportaal.nl" }),
   });
   const data = await gezet.json().catch(() => ({}));
-  if (!gezet.ok || !data.ok) return { fout: data.fout || "De postbus is niet aangemaakt. Het domein ambassadeur.boaportaal.nl moet bij de mailserver staan." };
+  if (!gezet.ok || !data.ok) return { fout: mailFout(data.fout) || "De postbus is niet aangemaakt. Het domein ambassadeur.boaportaal.nl moet bij de mailserver staan." };
   const org = await orgVan(adres);
   if (org?.slug && org.pass) {
     await fetch("https://systeem.boaportaal.nl/.netlify/functions/postbus", {
@@ -145,7 +154,11 @@ export async function handler(event) {
     }
     try {
       await controleerLogin(adres, geheim);
-    } catch {
+    } catch (e) {
+      const tekst = String(e?.message || "");
+      if (/timeout|timed out|geen antwoord|Greeting never received|ECONN/i.test(tekst)) {
+        return antwoord(503, { fout: "De mailserver reageerde niet. Probeer het opnieuw." });
+      }
       const herstel = await herstelAmbassadeur(adres, geheim);
       if (herstel !== true) {
         await mailLog("MAIL_LOGIN", local, "wachtwoord onjuist", "mislukt", ip);

@@ -264,7 +264,6 @@ function tekenLogin() {
   document.getElementById("app").innerHTML = `<div class="poort"><form class="poort-kaart" id="inlog">
     <div class="merkrij"><img src="/merk.png" alt=""><div><strong>BOA Portaal</strong><span>Voor BOA's, door BOA's</span></div></div>
     <h1>Mail</h1>
-    <p class="sub">Medewerker: voornaam.achternaam. Ambassadeur: het volledige adres, zoals joshua.bosma@ambassadeur.boaportaal.nl.</p>
     <label>Loginnaam<input name="email" type="text" autocomplete="username" required value="${esc(loginNaam)}" placeholder="voornaam.achternaam of volledig adres" autocapitalize="none" spellcheck="false"></label>
     <label>Wachtwoord<input name="wachtwoord" type="password" autocomplete="current-password" required></label>
     <p class="fout">${esc(fout)}</p>

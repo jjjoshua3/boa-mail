@@ -214,8 +214,9 @@ async function metPostbus(email, pass, werk) {
     secure: true,
     auth: { user: email, pass },
     logger: false,
-    greetingTimeout: 12000,
-    socketTimeout: 20000,
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
   });
   await client.connect();
   try { return await werk(client); }
