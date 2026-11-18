@@ -175,8 +175,15 @@ export function toonnaam(profiel, local) {
   return voor || local;
 }
 
-export function handtekeningHtml(naam) {
+export function handtekeningHtml(naam, opt = {}) {
   const veilig = schoneRegel(naam, 80);
+  if (opt.ambassadeur) {
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;border-collapse:collapse;">
+      <tr><td style="font-family:Georgia,Palatino,serif;font-size:16px;line-height:1.4;color:#1c1917;">Met vriendelijke groet,</td></tr>
+      <tr><td style="font-family:Georgia,Palatino,serif;font-size:22px;line-height:1.3;color:#0f2537;padding:8px 0 2px;">${veilig}</td></tr>
+      <tr><td style="font-family:Georgia,Palatino,serif;font-size:15px;line-height:1.3;color:#8C6A2F;padding-bottom:8px;">Trotse Ambassadeur</td></tr>
+    </table>`;
+  }
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;border-collapse:collapse;">
     <tr><td style="font-family:Georgia,Palatino,serif;font-size:16px;line-height:1.4;color:#1c1917;">Met vriendelijke groet,</td></tr>
     <tr><td style="font-family:Georgia,Palatino,serif;font-size:22px;line-height:1.3;color:#0f2537;padding:8px 0 16px;">${veilig}</td></tr>
@@ -194,8 +201,10 @@ export function handtekeningHtml(naam) {
   </table>`;
 }
 
-export function handtekeningTekst(naam) {
-  return `\n\nMet vriendelijke groet,\n\n${schoneRegel(naam, 80)}\n\nBOA Portaal\nVoor BOA's, door BOA's\nhttps://boaportaal.nl\nVeelgestelde vragen: https://faq.boaportaal.nl\n`;
+export function handtekeningTekst(naam, opt = {}) {
+  const regel = schoneRegel(naam, 80);
+  if (opt.ambassadeur) return `\n\nMet vriendelijke groet,\n\n${regel}\nTrotse Ambassadeur\n`;
+  return `\n\nMet vriendelijke groet,\n\n${regel}\n\nBOA Portaal\nVoor BOA's, door BOA's\nhttps://boaportaal.nl\nVeelgestelde vragen: https://faq.boaportaal.nl\n`;
 }
 
 async function metPostbus(email, pass, werk) {
@@ -573,7 +582,10 @@ export async function verstuur(sessie, invoer) {
   const local = sessie.org || sessie.email.split("@")[0];
   const vanAdres = sessie.org ? `${sessie.org}@ambassadeur.boaportaal.nl` : sessie.email;
   const vanPass = sessie.org ? sessie.orgPass : sessie.pass;
-  const naam = toonnaam(invoer, local);
+  const ambassadeur = Boolean(sessie.org);
+  const uitFormulier = `${schoneRegel(invoer.voornaam, 40)} ${schoneRegel(invoer.achternaam, 40)}`.trim();
+  const uitSessie = `${schoneRegel(sessie.voornaam, 40)} ${schoneRegel(sessie.achternaam, 40)}`.trim();
+  const naam = ambassadeur ? (uitFormulier || uitSessie || toonnaam(invoer, local)) : toonnaam(invoer, local);
   const bronMap = String(invoer.bronMap || "");
   if ((bronMap === "support" || bronMap === "info") && invoer.bronId) {
     const uid = String(invoer.bronId).split(":")[1];
@@ -585,8 +597,8 @@ export async function verstuur(sessie, invoer) {
     from: { name: naam, address: vanAdres },
     to: aan,
     subject: onderwerp,
-    text: `${tekst.trim()}${handtekeningTekst(naam)}`,
-    html: `<div style="font-family:Segoe UI,Trebuchet MS,sans-serif;font-size:15px;line-height:1.55;color:#1c1917;">${tekst.trim().replace(/&/g, "&" + "amp;").replace(/</g, "&" + "lt;").replace(/>/g, "&" + "gt;").replace(/\n/g, "<br>")}</div>${handtekeningHtml(naam)}`,
+    text: `${tekst.trim()}${handtekeningTekst(naam, { ambassadeur })}`,
+    html: `<div style="font-family:Segoe UI,Trebuchet MS,sans-serif;font-size:15px;line-height:1.55;color:#1c1917;">${tekst.trim().replace(/&/g, "&" + "amp;").replace(/</g, "&" + "lt;").replace(/>/g, "&" + "gt;").replace(/\n/g, "<br>")}</div>${handtekeningHtml(naam, { ambassadeur })}`,
     attachments,
   };
   if (bronMap === "support" || bronMap === "info") mail.bcc = GEDEELD[bronMap];

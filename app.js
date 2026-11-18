@@ -49,6 +49,14 @@ function raden(local) {
   }
   return { voornaam: mooi(local.replace(/-/g, " ")), achternaam: "", stijl: "voornaam" };
 }
+function onthoudNaam() {
+  if (!gebruiker?.org || !gebruiker.voornaam) return;
+  localStorage.setItem(sleutel(), JSON.stringify({
+    voornaam: gebruiker.voornaam,
+    achternaam: gebruiker.achternaam || "",
+    stijl: "volledig",
+  }));
+}
 function toonnaam(p) {
   const voor = (p.voornaam || "").trim();
   const achter = (p.achternaam || "").trim();
@@ -118,13 +126,16 @@ function stippen() {
 }
 
 function handtekeningBlok(naam) {
+  const rol = gebruiker?.org ? `<p class="rol">Trotse Ambassadeur</p>` : "";
+  const merk = gebruiker?.org ? "" : `<div class="slot">
+      <img src="/merk.png" alt="">
+      <div><b>BOA Portaal</b><span>Voor BOA's, door BOA's</span><a href="https://boaportaal.nl">boaportaal.nl</a><a href="https://faq.boaportaal.nl">Veelgestelde vragen</a></div>
+    </div>`;
   return `<div class="hand">
     <p class="groet">Met vriendelijke groet,</p>
     <p class="naam">${esc(naam)}</p>
-    <div class="slot">
-      <img src="/merk.png" alt="">
-      <div><b>BOA Portaal</b><span>Voor BOA's, door BOA's</span><a href="https://boaportaal.nl">boaportaal.nl</a><a href="https://faq.boaportaal.nl">Veelgestelde vragen</a></div>
-    </div>
+    ${rol}
+    ${merk}
   </div>`;
 }
 
@@ -276,7 +287,7 @@ function tekenLogin() {
       gebruiker.letop = data.letop || "";
       wacht = null;
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
-      if (gebruiker.org) map = "org";
+      if (gebruiker.org) { map = "org"; onthoudNaam(); }
       map = "in";
       openId = null;
       scherm = "post";
@@ -321,15 +332,15 @@ function opstelHtml(p) {
 function instelHtml(p) {
   return `<form class="instel" id="instel">
     <div class="kop"><h2>Handtekening</h2><button class="tekst" id="dicht" type="button">Sluiten</button></div>
-    <p class="sub">Elke mail krijgt dezelfde handtekening. Je kiest alleen hoe je naam er staat.</p>
+    <p class="sub">${gebruiker?.org ? "Uw handtekening is uw voornaam en achternaam, met daaronder Trotse Ambassadeur." : "Elke mail krijgt dezelfde handtekening. Je kiest alleen hoe je naam er staat."}</p>
     <label>Voornaam<input name="voornaam" required value="${esc(p.voornaam)}"></label>
     <label>Achternaam<input name="achternaam" value="${esc(p.achternaam)}"></label>
-    <p class="sub">Collega's vinden je op je voornaam en achternaam. Je adres is voornaam.achternaam@boaportaal.nl.</p>
-    <div class="keuze">
+    <p class="sub">${gebruiker?.org ? `U mailt als ${esc(gebruiker.email)}. De organisatiebus is ${esc(gebruiker.org)}@ambassadeur.boaportaal.nl.` : "Collega's vinden je op je voornaam en achternaam. Je adres is voornaam.achternaam@boaportaal.nl."}</p>
+    ${gebruiker?.org ? "" : `<div class="keuze">
       <button class="secundair ${p.stijl !== "volledig" ? "aan" : ""}" type="button" data-stijl="voornaam">Alleen voornaam</button>
       <button class="secundair ${p.stijl === "volledig" ? "aan" : ""}" type="button" data-stijl="volledig">Voornaam en achternaam</button>
-    </div>
-    <input type="hidden" name="stijl" value="${esc(p.stijl || "voornaam")}">
+    </div>`}
+    <input type="hidden" name="stijl" value="${gebruiker?.org ? "volledig" : esc(p.stijl || "voornaam")}">
     ${handtekeningBlok(toonnaam(p))}
     <button class="primair" type="submit">Bewaren</button>
   </form>`;
@@ -521,7 +532,7 @@ function bind(p) {
       });
       fout = "";
       scherm = "post";
-      map = "verzonden";
+      map = gebruiker?.org ? "org" : "verzonden";
       openId = null;
       zoek = "";
       await laad();
@@ -647,7 +658,7 @@ function tekenTotp() {
         body: JSON.stringify({ ticket: wacht.ticket, code }),
       });
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
-      if (gebruiker.org) map = "org";
+      if (gebruiker.org) { map = "org"; onthoudNaam(); }
       wacht = null;
       if (!gebruiker.org) map = "in";
       openId = null;
@@ -701,7 +712,7 @@ function tekenWijzig() {
         }),
       });
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
-      if (gebruiker.org) map = "org";
+      if (gebruiker.org) { map = "org"; onthoudNaam(); }
       wacht = null;
       if (!gebruiker.org) map = "in";
       openId = null;
@@ -719,7 +730,7 @@ toonFoto(foto, true);
 setInterval(() => toonFoto(foto + 1, false), 8000);
 api("/api/ik").then(async (ik) => {
   gebruiker = ik;
-  if (gebruiker?.org) map = "org";
+  if (gebruiker?.org) { map = "org"; onthoudNaam(); }
   laadTellers();
   await laad();
 }).catch(() => teken());

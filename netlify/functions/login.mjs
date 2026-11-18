@@ -29,6 +29,9 @@ function profiel(adres, extra = {}) {
     staf: adres.endsWith("@boaportaal.nl"),
     org: extra.slug || "",
     orgNaam: extra.naam || "",
+    ambassadeur: Boolean(extra.slug),
+    voornaam: extra.voornaam || "",
+    achternaam: extra.achternaam || "",
   };
 }
 
@@ -40,12 +43,12 @@ async function orgVan(email) {
   const url = process.env.SUPABASE_URL;
   if (!key || !url) return null;
   const kop = { apikey: key, authorization: `Bearer ${key}` };
-  const beheer = await fetch(`${url}/rest/v1/boa_ambassadeur?mail_local=eq.${encodeURIComponent(local)}&actief=eq.true&select=organisatie_id`, { headers: kop }).then((r) => r.json()).catch(() => []);
+  const beheer = await fetch(`${url}/rest/v1/boa_ambassadeur?mail_local=eq.${encodeURIComponent(local)}&actief=eq.true&select=organisatie_id,voornaam,achternaam`, { headers: kop }).then((r) => r.json()).catch(() => []);
   const id = beheer?.[0]?.organisatie_id;
   if (!id) return null;
   const org = await fetch(`${url}/rest/v1/boa_organisatie?id=eq.${id}&select=slug,naam,mail_geheim`, { headers: kop }).then((r) => r.json()).catch(() => []);
   if (!org?.[0]?.slug) return null;
-  return { slug: org[0].slug, naam: org[0].naam, pass: org[0].mail_geheim || "" };
+  return { slug: org[0].slug, naam: org[0].naam, pass: org[0].mail_geheim || "", voornaam: beheer[0].voornaam || "", achternaam: beheer[0].achternaam || "" };
 }
 
 export async function handler(event) {
@@ -72,7 +75,7 @@ export async function handler(event) {
       if (!gezet.ok || !data.ok) return antwoord(500, { fout: data.fout || "Het mailwachtwoord is niet gewijzigd." });
       await mailWachtwoordGezet(local);
       const org = await orgVan(open.email);
-      const token = verzegel({ email: open.email, pass: nieuw, exp: Date.now() + 12 * 60 * 60 * 1000, org: org?.slug || "", orgPass: org?.pass || "" });
+      const token = verzegel({ email: open.email, pass: nieuw, exp: Date.now() + 12 * 60 * 60 * 1000, org: org?.slug || "", orgPass: org?.pass || "", voornaam: org?.voornaam || "", achternaam: org?.achternaam || "" });
       await mailLog("MAIL_LOGIN", local, "mailwachtwoord gewijzigd", "geslaagd", ip);
       return antwoord(200, profiel(open.email, org || {}), { "set-cookie": koekje(token, 12 * 60 * 60) });
     }
@@ -87,7 +90,7 @@ export async function handler(event) {
         return antwoord(401, { fout: check.fout });
       }
       const org = await orgVan(open.email);
-      const token = verzegel({ email: open.email, pass: open.pass, exp: Date.now() + 12 * 60 * 60 * 1000, org: org?.slug || "", orgPass: org?.pass || "" });
+      const token = verzegel({ email: open.email, pass: open.pass, exp: Date.now() + 12 * 60 * 60 * 1000, org: org?.slug || "", orgPass: org?.pass || "", voornaam: org?.voornaam || "", achternaam: org?.achternaam || "" });
       await mailLog("MAIL_LOGIN", local, "ingelogd", "geslaagd", ip);
       return antwoord(200, profiel(open.email, org || {}), { "set-cookie": koekje(token, 12 * 60 * 60) });
     }
@@ -139,7 +142,7 @@ export async function handler(event) {
         welke: "beheer",
       });
     }
-    const token = verzegel({ email: adres, pass: geheim, exp: Date.now() + 12 * 60 * 60 * 1000, org: org?.slug || "", orgPass: org?.pass || "" });
+    const token = verzegel({ email: adres, pass: geheim, exp: Date.now() + 12 * 60 * 60 * 1000, org: org?.slug || "", orgPass: org?.pass || "", voornaam: org?.voornaam || "", achternaam: org?.achternaam || "" });
     await mailLog("MAIL_LOGIN", local, beheer.letop ? "ingelogd zonder tweede stap" : "ingelogd", "geslaagd", ip);
     return antwoord(200, { ...profiel(adres, org || {}), letop: beheer.letop || "" }, { "set-cookie": koekje(token, 12 * 60 * 60) });
   } catch (err) {
