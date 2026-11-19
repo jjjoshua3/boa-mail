@@ -9,16 +9,21 @@ function gebruikerClient() {
   return createClient(url, PUB, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
+let gebruikersCache = { t: 0, lijst: null };
+
 async function alleGebruikers() {
+  const nu = Date.now();
+  if (gebruikersCache.lijst && nu - gebruikersCache.t < 10 * 60 * 1000) return gebruikersCache.lijst;
   const admin = dienst();
   if (!admin) return [];
   const lijst = [];
-  for (let page = 1; page <= 20; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+  for (let page = 1; page <= 4; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
     if (error || !data?.users?.length) break;
     lijst.push(...data.users);
-    if (data.users.length < 200) break;
+    if (data.users.length < 1000) break;
   }
+  gebruikersCache = { t: nu, lijst };
   return lijst;
 }
 
@@ -65,7 +70,6 @@ async function vindGebruiker(local, adres) {
   const admin = dienst();
   if (!admin) return null;
   const users = await alleGebruikers();
-  await pasBekendePostbus(admin, users);
   const norm = (waarde) => String(waarde || "").trim().toLowerCase();
   const direct = users.find((user) => {
     const mail = norm(user.email);

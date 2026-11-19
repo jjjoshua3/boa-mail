@@ -207,20 +207,60 @@ export function handtekeningTekst(naam, opt = {}) {
   return `\n\nMet vriendelijke groet,\n\n${regel}\n\nBOA Portaal\nVoor BOA's, door BOA's\nhttps://boaportaal.nl\nVeelgestelde vragen: https://faq.boaportaal.nl\n`;
 }
 
-async function metPostbus(email, pass, werk) {
-  const client = new ImapFlow({
+const openPost = new Map();
+const rijPost = new Map();
+
+function nieuweClient(email, pass) {
+  return new ImapFlow({
     host: "imap.purelymail.com",
     port: 993,
     secure: true,
     auth: { user: email, pass },
     logger: false,
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 10000,
+    disableAutoIdle: true,
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 15000,
   });
-  await client.connect();
-  try { return await werk(client); }
-  finally { await client.logout().catch(() => client.close()); }
+}
+
+function sluitPost(email, slot) {
+  const huidig = openPost.get(email);
+  if (huidig && huidig !== slot) return;
+  openPost.delete(email);
+  clearTimeout(slot.timer);
+  slot.client.close();
+}
+
+async function eenPostbus(email, pass, werk) {
+  let slot = openPost.get(email);
+  if (!slot || slot.pass !== pass || !slot.client.usable) {
+    if (slot) sluitPost(email, slot);
+    const client = nieuweClient(email, pass);
+    await client.connect();
+    slot = { pass, client, timer: null };
+    openPost.set(email, slot);
+  }
+  clearTimeout(slot.timer);
+  slot.timer = setTimeout(() => sluitPost(email, slot), 45_000);
+  try {
+    return await werk(slot.client);
+  } catch (e) {
+    if (!slot.client.usable) sluitPost(email, slot);
+    throw e;
+  }
+}
+
+async function metPostbus(email, pass, werk) {
+  const vorige = rijPost.get(email) || Promise.resolve();
+  const taak = vorige.catch(() => {}).then(() => eenPostbus(email, pass, werk));
+  const rust = taak.then(() => {}, () => {});
+  rijPost.set(email, rust);
+  try {
+    return await taak;
+  } finally {
+    if (rijPost.get(email) === rust) rijPost.delete(email);
+  }
 }
 
 export async function controleerLogin(email, pass) {
@@ -300,32 +340,27 @@ export async function berichten(sessie, map) {
     try { lock = await client.getMailboxLock(pad); }
     catch { return { berichten: [] }; }
     try {
-      const uids = await client.search({ all: true }, { uid: true });
-      const laatste = (uids || []).slice(-40);
+      const bestaat = client.mailbox?.exists || 0;
+      if (!bestaat) return { berichten: [] };
+      const van = Math.max(1, bestaat - 39);
       const lijst = [];
-      if (laatste.length) {
-        for await (const msg of client.fetch(laatste.join(","), { uid: true, envelope: true, flags: true, internalDate: true, source: { start: 0, maxLength: 8192 } }, { uid: true })) {
-          const van = adresVan(msg.envelope?.from);
-          const aan = adresVan(msg.envelope?.to);
-          const bronVan = headerVeld(msg.source, "from");
-          const bronAan = headerVeld(msg.source, "to");
-          const vanTekst = van.tekst || bronVan || gekozen.email;
-          const vanAdres = van.adres || adresUit(bronVan);
-          const aanTekst = aan.tekst || bronAan;
-          lijst.push({
-            id: `${map}:${msg.uid}`,
-            uid: msg.uid,
-            van: vanTekst,
-            vanAdres,
-            vanKort: kortAdres(vanTekst, vanAdres),
-            aan: aanTekst,
-            aanAdres: aan.adres || adresUit(bronAan),
-            onderwerp: msg.envelope?.subject || headerVeld(msg.source, "subject") || "(geen onderwerp)",
-            tijd: msg.internalDate ? new Date(msg.internalDate).getTime() : Date.now(),
-            gezien: gezienUit(msg.flags),
-            claim: (map === "support" || map === "info") ? claimUit(msg.flags, sessie.email.split("@")[0]) : null,
-          });
-        }
+      for await (const msg of client.fetch(`${van}:*`, { uid: true, envelope: true, flags: true, internalDate: true })) {
+        const vanWie = adresVan(msg.envelope?.from);
+        const aan = adresVan(msg.envelope?.to);
+        const vanTekst = vanWie.tekst || gekozen.email;
+        lijst.push({
+          id: `${map}:${msg.uid}`,
+          uid: msg.uid,
+          van: vanTekst,
+          vanAdres: vanWie.adres,
+          vanKort: kortAdres(vanTekst, vanWie.adres),
+          aan: aan.tekst,
+          aanAdres: aan.adres,
+          onderwerp: msg.envelope?.subject || "(geen onderwerp)",
+          tijd: msg.internalDate ? new Date(msg.internalDate).getTime() : Date.now(),
+          gezien: gezienUit(msg.flags),
+          claim: (map === "support" || map === "info") ? claimUit(msg.flags, sessie.email.split("@")[0]) : null,
+        });
       }
       lijst.sort((a, b) => b.tijd - a.tijd);
       return { berichten: lijst };
@@ -645,7 +680,6 @@ export async function tellers(sessie) {
     return { tellers: uit };
   }
   const uit = {};
-  const local = sessie.email.split("@")[0];
   try {
     await metPostbus(sessie.email, sessie.pass, async (client) => {
       const paden = await padenVan(client);
@@ -657,19 +691,6 @@ export async function tellers(sessie) {
       }
     });
   } catch { /* tellers blijven leeg */ }
-  const gedeeld = ["support", "info"];
-  if (local === "joshua.bosma" || local === "beheerder") gedeeld.push("account");
-  if (sessie.email.endsWith("@boaportaal.nl")) gedeeld.push("ambassadeur", "ambsupport");
-  await Promise.all(gedeeld.map(async (id) => {
-    const pass = envWachtwoord(id);
-    if (!pass) return;
-    try {
-      await metPostbus(GEDEELD[id], pass, async (client) => {
-        const st = await client.status("INBOX", { unseen: true });
-        uit[id] = st.unseen || 0;
-      });
-    } catch { uit[id] = 0; }
-  }));
   return { tellers: uit };
 }
 

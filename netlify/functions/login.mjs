@@ -1,7 +1,20 @@
-import { antwoord, controleerLogin, geldigAdres, ipVan, koekje, leesJson, mailLog, openToken, verzegel } from "./lib.mjs";
+import { antwoord, berichten, controleerLogin, geldigAdres, ipVan, koekje, leesJson, mailLog, openToken, verzegel } from "./lib.mjs";
 import { bevestigBeheer, mailMoetWijzigen, mailWachtwoordGezet, startBeheer } from "./beheer.mjs";
 
 const DIENST = new Set(["support", "info", "ambassadeur"]);
+
+async function postErbij(sessie, map) {
+  try {
+    const data = await berichten(sessie, map);
+    return data.berichten || [];
+  } catch {
+    return [];
+  }
+}
+
+function logLater(soort, local, tekst, uitslag, ip) {
+  mailLog(soort, local, tekst, uitslag, ip).catch(() => {});
+}
 
 function naarAdres(ruw) {
   let s = String(ruw || "").trim().toLowerCase();
@@ -123,9 +136,12 @@ export async function handler(event) {
       if (!gezet.ok || !data.ok) return antwoord(500, { fout: data.fout || "Het mailwachtwoord is niet gewijzigd." });
       await mailWachtwoordGezet(local);
       const org = await orgVan(open.email);
-      const token = verzegel({ email: open.email, pass: nieuw, exp: Date.now() + 12 * 60 * 60 * 1000, org: org?.slug || "", orgPass: org?.pass || "", voornaam: org?.voornaam || "", achternaam: org?.achternaam || "" });
-      await mailLog("MAIL_LOGIN", local, "mailwachtwoord gewijzigd", "geslaagd", ip);
-      return antwoord(200, profiel(open.email, org || {}), { "set-cookie": koekje(token, 12 * 60 * 60) });
+      const sessie = { email: open.email, pass: nieuw, org: org?.slug || "", orgPass: org?.pass || "", orgNaam: org?.naam || "", voornaam: org?.voornaam || "", achternaam: org?.achternaam || "" };
+      const token = verzegel({ ...sessie, exp: Date.now() + 12 * 60 * 60 * 1000 });
+      const map = sessie.org ? "org" : "in";
+      const binnen = await postErbij(sessie, map);
+      logLater("MAIL_LOGIN", local, "mailwachtwoord gewijzigd", "geslaagd", ip);
+      return antwoord(200, { ...profiel(open.email, org || {}), berichten: binnen, map }, { "set-cookie": koekje(token, 12 * 60 * 60) });
     }
     if (body.ticket) {
       const open = openToken(body.ticket);
@@ -133,14 +149,17 @@ export async function handler(event) {
       const local = open.email.split("@")[0];
       const check = await bevestigBeheer(open, body.code);
       if (check.fout) {
-        await mailLog("MAIL_LOGIN", local, "onjuiste authenticatorcode", "mislukt", ip);
-        await slaIp(ip, local);
+        logLater("MAIL_LOGIN", local, "onjuiste authenticatorcode", "mislukt", ip);
+        slaIp(ip, local).catch(() => {});
         return antwoord(401, { fout: check.fout });
       }
       const org = await orgVan(open.email);
-      const token = verzegel({ email: open.email, pass: open.pass, exp: Date.now() + 12 * 60 * 60 * 1000, org: org?.slug || "", orgPass: org?.pass || "", voornaam: org?.voornaam || "", achternaam: org?.achternaam || "" });
-      await mailLog("MAIL_LOGIN", local, "ingelogd", "geslaagd", ip);
-      return antwoord(200, profiel(open.email, org || {}), { "set-cookie": koekje(token, 12 * 60 * 60) });
+      const sessie = { email: open.email, pass: open.pass, org: org?.slug || "", orgPass: org?.pass || "", orgNaam: org?.naam || "", voornaam: org?.voornaam || "", achternaam: org?.achternaam || "" };
+      const token = verzegel({ ...sessie, exp: Date.now() + 12 * 60 * 60 * 1000 });
+      const map = sessie.org ? "org" : "in";
+      const binnen = await postErbij(sessie, map);
+      logLater("MAIL_LOGIN", local, "ingelogd", "geslaagd", ip);
+      return antwoord(200, { ...profiel(open.email, org || {}), berichten: binnen, map }, { "set-cookie": koekje(token, 12 * 60 * 60) });
     }
     const adres = naarAdres(body.email);
     const local = adres.split("@")[0];
@@ -173,16 +192,15 @@ export async function handler(event) {
     }
     const org = await orgVan(adres);
     if (org?.weiger) return antwoord(403, { fout: "Dit is de organisatiebus. Log in met uw volledige adres: voornaam.achternaam@ambassadeur.boaportaal.nl." });
-    if (await mailMoetWijzigen(local)) {
+    const [moet, beheerUit] = await Promise.all([
+      mailMoetWijzigen(local),
+      startBeheer(adres, geheim).catch(() => ({ letop: "" })),
+    ]);
+    if (moet) {
       const ticket = verzegel({ email: adres, pass: geheim, exp: Date.now() + 10 * 60 * 1000, ticket: true, wijzig: true });
       return antwoord(200, { stap: "wachtwoord", ticket, local });
     }
-    let beheer = { letop: "" };
-    try {
-      beheer = await startBeheer(adres, geheim);
-    } catch {
-      beheer = { letop: "" };
-    }
+    const beheer = beheerUit || { letop: "" };
     if (beheer.stap) {
       const ticket = verzegel({
         email: adres,
@@ -202,9 +220,12 @@ export async function handler(event) {
         welke: "beheer",
       });
     }
-    const token = verzegel({ email: adres, pass: geheim, exp: Date.now() + 12 * 60 * 60 * 1000, org: org?.slug || "", orgPass: org?.pass || "", voornaam: org?.voornaam || "", achternaam: org?.achternaam || "" });
-    await mailLog("MAIL_LOGIN", local, beheer.letop ? "ingelogd zonder tweede stap" : "ingelogd", "geslaagd", ip);
-    return antwoord(200, { ...profiel(adres, org || {}), letop: beheer.letop || "" }, { "set-cookie": koekje(token, 12 * 60 * 60) });
+    const sessie = { email: adres, pass: geheim, org: org?.slug || "", orgPass: org?.pass || "", orgNaam: org?.naam || "", voornaam: org?.voornaam || "", achternaam: org?.achternaam || "" };
+    const token = verzegel({ ...sessie, exp: Date.now() + 12 * 60 * 60 * 1000 });
+    const map = sessie.org ? "org" : "in";
+    const binnen = await postErbij(sessie, map);
+    logLater("MAIL_LOGIN", local, beheer.letop ? "ingelogd zonder tweede stap" : "ingelogd", "geslaagd", ip);
+    return antwoord(200, { ...profiel(adres, org || {}), letop: beheer.letop || "", berichten: binnen, map }, { "set-cookie": koekje(token, 12 * 60 * 60) });
   } catch (err) {
     if (String(err?.message || "") === "geen sleutel") {
       return antwoord(503, { fout: "De mailserver mist een sessiesleutel. Zet op de Netlify-site van mail dezelfde SUPABASE_URL en SUPABASE_SERVICE_ROLE_KEY als bij systeem, of een SESSION_SECRET van minstens 24 tekens." });

@@ -8,7 +8,7 @@ export default async (request, context) => {
   const ip = context.ip || request.headers.get("x-nf-client-connection-ip") || "";
   if (!ip) return context.next();
   const control = new AbortController();
-  const timer = setTimeout(() => control.abort(), 2000);
+  const timer = setTimeout(() => control.abort(), 600);
   try {
     const res = await fetch("https://systeem.boaportaal.nl/.netlify/functions/ip", {
       method: "POST",

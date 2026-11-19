@@ -228,6 +228,7 @@ async function laad() {
   try {
     const data = await api(`/api/post?map=${encodeURIComponent(map)}`);
     berichten = data.berichten || [];
+    tellers[map] = berichten.filter((item) => !item.gezien).length;
     fout = "";
   } catch (e) {
     berichten = [];
@@ -293,11 +294,19 @@ function tekenLogin() {
       wacht = null;
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
       if (gebruiker.org) { map = "org"; onthoudNaam(); }
-      map = "in";
+      else map = data.map || "in";
       openId = null;
       scherm = "post";
-      laadTellers();
-      await laad();
+      if (Array.isArray(data.berichten)) {
+        berichten = data.berichten;
+        tellers[map] = berichten.filter((item) => !item.gezien).length;
+        laden = false;
+        teken();
+        laadTellers();
+      } else {
+        laadTellers();
+        await laad();
+      }
     } catch (err) {
       gebruiker = null;
       bezig = false;
@@ -665,12 +674,20 @@ function tekenTotp() {
       });
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
       if (gebruiker.org) { map = "org"; onthoudNaam(); }
+      else map = "in";
       wacht = null;
-      if (!gebruiker.org) map = "in";
       openId = null;
       scherm = "post";
-      laadTellers();
-      await laad();
+      if (Array.isArray(gebruiker.berichten)) {
+        berichten = gebruiker.berichten;
+        tellers[map] = berichten.filter((item) => !item.gezien).length;
+        laden = false;
+        teken();
+        laadTellers();
+      } else {
+        laadTellers();
+        await laad();
+      }
     } catch (err) {
       fout = err.message;
       teken();
@@ -680,7 +697,7 @@ function tekenTotp() {
 
 function laadTellers() {
   api("/api/post?overzicht=1").then((data) => {
-    tellers = data.tellers || {};
+    tellers = { ...tellers, ...(data.tellers || {}) };
     if (gebruiker && !wacht && scherm === "post") teken();
   }).catch(() => {});
 }
@@ -719,12 +736,20 @@ function tekenWijzig() {
       });
       gebruiker.account = gebruiker.local === "joshua.bosma" || gebruiker.local === "beheerder";
       if (gebruiker.org) { map = "org"; onthoudNaam(); }
+      else map = "in";
       wacht = null;
-      if (!gebruiker.org) map = "in";
       openId = null;
       scherm = "post";
-      laadTellers();
-      await laad();
+      if (Array.isArray(gebruiker.berichten)) {
+        berichten = gebruiker.berichten;
+        tellers[map] = berichten.filter((item) => !item.gezien).length;
+        laden = false;
+        teken();
+        laadTellers();
+      } else {
+        laadTellers();
+        await laad();
+      }
     } catch (err) {
       fout = err.message;
       teken();
@@ -737,6 +762,15 @@ setInterval(() => toonFoto(foto + 1, false), 8000);
 api("/api/ik").then(async (ik) => {
   gebruiker = ik;
   if (gebruiker?.org) { map = "org"; onthoudNaam(); }
+  else map = "in";
+  if (Array.isArray(ik.berichten)) {
+    berichten = ik.berichten;
+    tellers[map] = berichten.filter((item) => !item.gezien).length;
+    laden = false;
+    teken();
+    laadTellers();
+    return;
+  }
   laadTellers();
   await laad();
 }).catch(() => teken());
