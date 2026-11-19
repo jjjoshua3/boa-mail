@@ -82,23 +82,6 @@ async function portalWachtwoord(email, geheim) {
   return login.ok;
 }
 
-function naamAlsPostbus(meta) {
-  const schoon = (waarde) => String(waarde || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
-  const voor = schoon(meta?.voornaam);
-  const achter = schoon(meta?.achternaam);
-  return voor && achter ? `${voor}.${achter}` : "";
-}
-
-function zelfdePersoon(a, b) {
-  if (!a || !b || a === b) return a === b && Boolean(a);
-  const [voor, ...rest] = a.split(".");
-  const [ander, ...rest2] = b.split(".");
-  const achter = rest.join(".");
-  const achter2 = rest2.join(".");
-  if (!achter || achter !== achter2) return false;
-  return ander === voor || ander === voor[0] || voor === ander[0];
-}
-
 async function herstelPortaal(adres, geheim) {
   if (!String(adres).endsWith("@boaportaal.nl")) return false;
   const local = adres.split("@")[0];
