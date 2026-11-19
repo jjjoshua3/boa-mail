@@ -73,6 +73,73 @@ function mailFout(tekst) {
   return ruw;
 }
 
+async function portalWachtwoord(email, geheim) {
+  const login = await fetch("https://ofzyqwpztohflxdhqgbb.supabase.co/auth/v1/token?grant_type=password", {
+    method: "POST",
+    headers: { apikey: "sb_publishable_x8nU8ype6b1KOL6K8lS2Iw_DDjz4Olr", "content-type": "application/json" },
+    body: JSON.stringify({ email, password: geheim }),
+  });
+  return login.ok;
+}
+
+function naamAlsPostbus(meta) {
+  const schoon = (waarde) => String(waarde || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
+  const voor = schoon(meta?.voornaam);
+  const achter = schoon(meta?.achternaam);
+  return voor && achter ? `${voor}.${achter}` : "";
+}
+
+function zelfdePersoon(a, b) {
+  if (!a || !b || a === b) return a === b && Boolean(a);
+  const [voor, ...rest] = a.split(".");
+  const [ander, ...rest2] = b.split(".");
+  const achter = rest.join(".");
+  const achter2 = rest2.join(".");
+  if (!achter || achter !== achter2) return false;
+  return ander === voor || ander === voor[0] || voor === ander[0];
+}
+
+async function herstelPortaal(adres, geheim) {
+  if (!String(adres).endsWith("@boaportaal.nl")) return false;
+  const local = adres.split("@")[0];
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const url = process.env.SUPABASE_URL || "";
+  if (!key || !url) return { fout: "De mailserver mist de koppeling met het accountsysteem." };
+  const stuk = local.split(".").filter(Boolean).pop() || local;
+  const lijst = await fetch(`${url}/auth/v1/admin/users?per_page=200&filter=${encodeURIComponent(stuk)}`, {
+    headers: { apikey: key, authorization: `Bearer ${key}` },
+  }).then((r) => r.json()).catch(() => ({}));
+  const users = Array.isArray(lijst.users) ? lijst.users : [];
+  let email = "";
+  if (await portalWachtwoord(adres, geheim)) email = adres;
+  if (!email) {
+    for (const user of users) {
+      const mail = String(user.email || "").trim().toLowerCase();
+      const meta = user.user_metadata || {};
+      const eigen = naamAlsPostbus(meta);
+      const mailLocal = String(meta.mail_local || "").toLowerCase();
+      const mailNaam = mail.split("@")[0];
+      const hoort = mail === adres || mailLocal === local || eigen === local || zelfdePersoon(local, mailNaam) || zelfdePersoon(local, mailLocal) || zelfdePersoon(local, eigen);
+      if (!hoort || !mail) continue;
+      if (await portalWachtwoord(mail, geheim)) { email = mail; break; }
+    }
+  }
+  if (!email) return false;
+  const gezet = await fetch("https://systeem.boaportaal.nl/.netlify/functions/postbus", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    body: JSON.stringify({ local, password: geheim, domain: "boaportaal.nl" }),
+  });
+  const data = await gezet.json().catch(() => ({}));
+  if (!gezet.ok || !data.ok) return { fout: mailFout(data.fout) || "De postbus is niet aangemaakt." };
+  try {
+    await controleerLogin(adres, geheim);
+    return true;
+  } catch (e) {
+    return { fout: `De postbus ${adres} staat nu, maar de mailserver laat u er nog niet in. ${e?.message || "Probeer het over een minuut opnieuw."}` };
+  }
+}
+
 async function herstelAmbassadeur(adres, geheim) {
   if (!String(adres).endsWith("@ambassadeur.boaportaal.nl") || geheim.length < 12) return false;
   const local = adres.split("@")[0];
@@ -179,11 +246,12 @@ export async function handler(event) {
         return antwoord(503, { fout: "De mailserver reageerde niet. Probeer het opnieuw." });
       }
       const herstel = await herstelAmbassadeur(adres, geheim);
-      if (herstel !== true) {
+      const portaal = herstel === true ? true : await herstelPortaal(adres, geheim);
+      if (portaal !== true) {
         await mailLog("MAIL_LOGIN", local, "wachtwoord onjuist", "mislukt", ip);
         await slaIp(ip, local);
-        let fout = herstel?.fout || "Deze postbus bestaat niet, of het wachtwoord klopt niet.";
-        if (herstel === false && adres.endsWith("@boaportaal.nl")) {
+        let fout = portaal?.fout || herstel?.fout || "Deze postbus bestaat niet, of het wachtwoord klopt niet.";
+        if (herstel === false && portaal === false && adres.endsWith("@boaportaal.nl")) {
           const org = await orgVan(`${local}@ambassadeur.boaportaal.nl`);
           if (org?.slug) fout = `Dit is de medewerkerspostbus. Voor uw organisatie logt u in met ${local}@ambassadeur.boaportaal.nl.`;
         }
