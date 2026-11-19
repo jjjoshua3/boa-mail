@@ -66,6 +66,21 @@ async function pasBekendePostbus(admin, users) {
     await schrijfPostbus(admin, user, HERNOEM["bp-0164-rw"], lokaal || "bp-0164-rw");
   }
 }
+export async function zoekAccount(local, adres) {
+  const users = await alleGebruikers();
+  const norm = (waarde) => String(waarde || "").trim().toLowerCase();
+  const schoon = (waarde) => norm(waarde).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
+  const doel = norm(local);
+  return users.find((user) => {
+    const mail = norm(user.email);
+    const meta = user.user_metadata || {};
+    const eigen = schoon(meta.voornaam) && schoon(meta.achternaam) ? `${schoon(meta.voornaam)}.${schoon(meta.achternaam)}` : "";
+    const mailLocal = norm(meta.mail_local);
+    const mailNaam = mail.split("@")[0];
+    return mail === norm(adres) || mailLocal === doel || norm(meta.client_id) === doel || mailNaam === doel || eigen === doel;
+  }) || null;
+}
+
 async function vindGebruiker(local, adres) {
   const admin = dienst();
   if (!admin) return null;

@@ -1,5 +1,5 @@
 import { antwoord, berichten, controleerLogin, geldigAdres, ipVan, koekje, leesJson, mailLog, openToken, verzegel } from "./lib.mjs";
-import { bevestigBeheer, mailMoetWijzigen, mailWachtwoordGezet, startBeheer } from "./beheer.mjs";
+import { bevestigBeheer, mailMoetWijzigen, mailWachtwoordGezet, startBeheer, zoekAccount } from "./beheer.mjs";
 
 const DIENST = new Set(["support", "info", "ambassadeur"]);
 
@@ -103,40 +103,26 @@ async function herstelPortaal(adres, geheim) {
   if (!String(adres).endsWith("@boaportaal.nl")) return false;
   const local = adres.split("@")[0];
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  const url = process.env.SUPABASE_URL || "";
-  if (!key || !url) return { fout: "De mailserver mist de koppeling met het accountsysteem." };
-  const stuk = local.split(".").filter(Boolean).pop() || local;
-  const lijst = await fetch(`${url}/auth/v1/admin/users?per_page=200&filter=${encodeURIComponent(stuk)}`, {
-    headers: { apikey: key, authorization: `Bearer ${key}` },
-  }).then((r) => r.json()).catch(() => ({}));
-  const users = Array.isArray(lijst.users) ? lijst.users : [];
-  let email = "";
-  if (await portalWachtwoord(adres, geheim)) email = adres;
-  if (!email) {
-    for (const user of users) {
-      const mail = String(user.email || "").trim().toLowerCase();
-      const meta = user.user_metadata || {};
-      const eigen = naamAlsPostbus(meta);
-      const mailLocal = String(meta.mail_local || "").toLowerCase();
-      const mailNaam = mail.split("@")[0];
-      const hoort = mail === adres || mailLocal === local || eigen === local || zelfdePersoon(local, mailNaam) || zelfdePersoon(local, mailLocal) || zelfdePersoon(local, eigen);
-      if (!hoort || !mail) continue;
-      if (await portalWachtwoord(mail, geheim)) { email = mail; break; }
-    }
+  if (!key || !process.env.SUPABASE_URL) return { fout: "De mailserver mist de koppeling met het accountsysteem." };
+  const user = await zoekAccount(local, adres);
+  const email = String(user?.email || "").trim().toLowerCase();
+  if (!email) return { fout: `De postbus ${adres} bestaat. Er hangt geen portaalaccount aan, dus het wachtwoord van boaportaal.nl kan hier niet gebruikt worden.` };
+  if (!(await portalWachtwoord(email, geheim))) {
+    return { fout: `De postbus ${adres} bestaat. Dit is niet het wachtwoord van het portaalaccount ${email}.` };
   }
-  if (!email) return false;
   const gezet = await fetch("https://systeem.boaportaal.nl/.netlify/functions/postbus", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify({ local, password: geheim, domain: "boaportaal.nl" }),
   });
   const data = await gezet.json().catch(() => ({}));
-  if (!gezet.ok || !data.ok) return { fout: mailFout(data.fout) || "De postbus is niet aangemaakt." };
+  if (!gezet.ok || !data.ok) return { fout: mailFout(data.fout) || "Het wachtwoord van de postbus is niet gelijkgesteld." };
+  await mailWachtwoordGezet(local);
   try {
     await controleerLogin(adres, geheim);
     return true;
   } catch (e) {
-    return { fout: `De postbus ${adres} staat nu, maar de mailserver laat u er nog niet in. ${e?.message || "Probeer het over een minuut opnieuw."}` };
+    return { fout: `Het wachtwoord van ${adres} is gelijkgesteld aan het portaal. De mailserver laat u er nog niet in. ${e?.message || "Probeer het over een minuut opnieuw."}` };
   }
 }
 
