@@ -10,7 +10,7 @@ export async function handler(event) {
     const uitkomst = q.id ? await bericht(sessie, map, q.id, q.bijlage) : await berichten(sessie, map);
     if (uitkomst.fout) return antwoord(uitkomst.status || 400, { fout: uitkomst.fout });
     return antwoord(200, uitkomst);
-  } catch {
+  } catch (err) {
     return antwoord(502, { fout: "De postbus reageert niet. Probeer het opnieuw." });
   }
 }

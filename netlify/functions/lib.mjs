@@ -207,59 +207,22 @@ export function handtekeningTekst(naam, opt = {}) {
   return `\n\nMet vriendelijke groet,\n\n${regel}\n\nBOA Portaal\nVoor BOA's, door BOA's\nhttps://boaportaal.nl\nVeelgestelde vragen: https://faq.boaportaal.nl\n`;
 }
 
-const openPost = new Map();
-const rijPost = new Map();
-
-function nieuweClient(email, pass) {
-  return new ImapFlow({
+async function metPostbus(email, pass, werk) {
+  const client = new ImapFlow({
     host: "imap.purelymail.com",
     port: 993,
     secure: true,
     auth: { user: email, pass },
     logger: false,
-    disableAutoIdle: true,
-    connectionTimeout: 5000,
-    greetingTimeout: 5000,
-    socketTimeout: 15000,
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 12000,
   });
-}
-
-function sluitPost(email, slot) {
-  const huidig = openPost.get(email);
-  if (huidig && huidig !== slot) return;
-  openPost.delete(email);
-  clearTimeout(slot.timer);
-  slot.client.close();
-}
-
-async function eenPostbus(email, pass, werk) {
-  let slot = openPost.get(email);
-  if (!slot || slot.pass !== pass || !slot.client.usable) {
-    if (slot) sluitPost(email, slot);
-    const client = nieuweClient(email, pass);
-    await client.connect();
-    slot = { pass, client, timer: null };
-    openPost.set(email, slot);
-  }
-  clearTimeout(slot.timer);
-  slot.timer = setTimeout(() => sluitPost(email, slot), 45_000);
+  await client.connect();
   try {
-    return await werk(slot.client);
-  } catch (e) {
-    if (!slot.client.usable) sluitPost(email, slot);
-    throw e;
-  }
-}
-
-async function metPostbus(email, pass, werk) {
-  const vorige = rijPost.get(email) || Promise.resolve();
-  const taak = vorige.catch(() => {}).then(() => eenPostbus(email, pass, werk));
-  const rust = taak.then(() => {}, () => {});
-  rijPost.set(email, rust);
-  try {
-    return await taak;
+    return await werk(client);
   } finally {
-    if (rijPost.get(email) === rust) rijPost.delete(email);
+    await client.logout().catch(() => client.close());
   }
 }
 
@@ -364,6 +327,8 @@ export async function berichten(sessie, map) {
       }
       lijst.sort((a, b) => b.tijd - a.tijd);
       return { berichten: lijst };
+    } catch {
+      return { berichten: [] };
     } finally { lock.release(); }
   });
 }

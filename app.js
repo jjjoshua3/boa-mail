@@ -69,7 +69,7 @@ function toonnaam(p) {
 async function api(pad, opt = {}) {
   const r = await fetch(pad, { credentials: "same-origin", ...opt });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.fout || "Mislukt");
+  if (!r.ok) throw new Error(data.fout || "De postbus reageert niet. Probeer het opnieuw.");
   return data;
 }
 
