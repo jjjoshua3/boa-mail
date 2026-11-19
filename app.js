@@ -88,16 +88,16 @@ function mappenHtml() {
     gedeeld.push(knop("ambassadeur", "Ambassadeur"));
     gedeeld.push(knop("ambsupport", "Ambassadeur | Support"));
   }
-  return `<p class="mapgroep-titel">Persoonlijk</p>
+  return `<p class="mapgroep-titel">Gedeeld</p>
+    ${gedeeld.join("")}
+    <p class="mapgroep-titel">Persoonlijk</p>
     ${knop("in", "Postvak IN")}
     <div class="submappen">
       ${knop("concepten", "Concepten")}
       ${knop("verzonden", "Verzonden")}
       ${knop("archief", "Archief")}
       ${knop("prullenbak", "Prullenbak")}
-    </div>
-    <p class="mapgroep-titel">Gedeeld</p>
-    ${gedeeld.join("")}`;
+    </div>`;
 }
 
 function korteNaam(item) {
